@@ -138,7 +138,9 @@ async function bootstrap() {
   if (process.env.NODE_ENV === 'production') {
     const REQUIRED_SECRETS = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'MONGODB_URI', 'RAZORPAY_KEY_SECRET'];
     const missing = REQUIRED_SECRETS.filter((key) => !process.env[key]);
-    const hasFirebaseCredentials = process.env.FIREBASE_SERVICE_ACCOUNT ||
+    const hasFirebaseCredentials =
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
+      process.env.FIREBASE_SERVICE_ACCOUNT ||
       process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ||
       process.env.GOOGLE_APPLICATION_CREDENTIALS;
     if (!hasFirebaseCredentials) missing.push('FIREBASE_SERVICE_ACCOUNT');
