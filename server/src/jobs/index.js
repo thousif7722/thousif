@@ -9,7 +9,7 @@ let workers = [];
 
 const QUEUE_OPTIONS = {
   connection: {
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    url: process.env.REDIS_URL,
   },
   defaultJobOptions: {
     attempts: 3,
