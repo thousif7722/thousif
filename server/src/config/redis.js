@@ -31,6 +31,10 @@ async function connectRedis() {
   }
 
   const isTls = redisUrl.startsWith('rediss://');
+  let hostname;
+  try {
+    hostname = new URL(redisUrl).hostname;
+  } catch {}
 
   const clientOptions = {
     url: redisUrl,
@@ -46,7 +50,12 @@ async function connectRedis() {
         logger.warn(`Redis reconnecting in ${delay}ms (attempt ${retries})`);
         return delay;
       },
-      ...(isTls && { tls: true, rejectUnauthorized: false }), // Ensure TLS compatibility for AWS ElastiCache Serverless
+      ...(isTls && {
+        tls: true,
+        servername: hostname,
+        rejectUnauthorized: false,
+        checkServerIdentity: () => undefined,
+      }),
     },
   };
 

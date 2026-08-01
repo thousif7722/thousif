@@ -7,9 +7,24 @@ const logger = require('../utils/logger');
 let bookingQueue, paymentQueue, notificationQueue, invoiceQueue;
 let workers = [];
 
+const isTls = process.env.REDIS_URL?.startsWith('rediss://');
+let redisHost;
+try {
+  if (process.env.REDIS_URL) redisHost = new URL(process.env.REDIS_URL).hostname;
+} catch {}
+
 const QUEUE_OPTIONS = {
   connection: {
     url: process.env.REDIS_URL,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    ...(isTls && {
+      tls: {
+        rejectUnauthorized: false,
+        servername: redisHost,
+        checkServerIdentity: () => undefined,
+      },
+    }),
   },
   defaultJobOptions: {
     attempts: 3,
