@@ -27,7 +27,7 @@ export const createBooking = createAsyncThunk('booking/create', async (data, { r
 const bookingSlice = createSlice({
   name: 'booking',
   initialState: {
-    bookings: [], currentBooking: null, activeBooking: null,
+    bookings: [], currentBooking: null, activeBooking: null, currentMaterials: null,
     loading: false, error: null, pagination: null,
   },
   reducers: {
@@ -48,20 +48,21 @@ const bookingSlice = createSlice({
       .addCase(fetchMyBookings.pending, (state) => { state.loading = true; })
       .addCase(fetchMyBookings.fulfilled, (state, action) => {
         state.loading = false;
-        state.bookings = action.payload.data;
-        state.pagination = action.payload.pagination;
+        state.bookings = Array.isArray(action.payload?.data) ? action.payload.data : [];
+        state.pagination = action.payload?.pagination || null;
       })
       .addCase(fetchMyBookings.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(fetchBookingById.pending, (state) => { state.loading = true; })
       .addCase(fetchBookingById.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentBooking = action.payload.booking;
+        state.currentBooking = action.payload?.booking || null;
+        state.currentMaterials = action.payload?.materials || null;
       })
       .addCase(fetchBookingById.rejected, (state) => { state.loading = false; })
       .addCase(createBooking.pending, (state) => { state.loading = true; })
       .addCase(createBooking.fulfilled, (state, action) => {
         state.loading = false;
-        state.activeBooking = action.payload;
+        state.activeBooking = action.payload || null;
         toast.success('Booking created! Finding the best provider for you...');
       })
       .addCase(createBooking.rejected, (state, action) => {
@@ -74,6 +75,7 @@ const bookingSlice = createSlice({
 export const { setActiveBooking, updateBookingStatus, clearCurrentBooking } = bookingSlice.actions;
 export const selectBookings = (state) => state.booking.bookings;
 export const selectCurrentBooking = (state) => state.booking.currentBooking;
+export const selectCurrentMaterials = (state) => state.booking.currentMaterials;
 export const selectActiveBooking = (state) => state.booking.activeBooking;
 export const selectBookingLoading = (state) => state.booking.loading;
 export default bookingSlice.reducer;

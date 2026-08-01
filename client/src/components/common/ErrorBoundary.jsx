@@ -8,11 +8,12 @@ class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true };
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, errorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
+    this.setState({ errorInfo });
   }
 
   handleRetry = () => {
@@ -30,9 +31,10 @@ class ErrorBoundary extends React.Component {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Oops! Something went wrong.
           </h1>
-          <p className="text-gray-600 max-w-md mb-8">
-            An unexpected error occurred while loading this page. 
-            Don't worry, our team has been notified.
+          <p className="text-red-600 max-w-2xl mb-4 font-mono text-xs text-left bg-red-50 p-4 rounded-xl overflow-auto h-48 border border-red-200">
+            {this.state.error && this.state.error.toString()}
+            <br/><br/>
+            {this.state.errorInfo && this.state.errorInfo.componentStack}
           </p>
           <button
             onClick={this.handleRetry}

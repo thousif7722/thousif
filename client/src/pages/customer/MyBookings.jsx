@@ -45,7 +45,7 @@ export default function MyBookings() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-16 max-w-2xl mx-auto px-4 py-6">
+      <div className="max-w-2xl mx-auto px-4 py-6">
 
         <h1 className="text-2xl font-bold text-slate-900 mb-5">My Bookings</h1>
 
@@ -96,8 +96,36 @@ export default function MyBookings() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-bold text-slate-800 truncate">{b.serviceId?.name}</p>
-                        <StatusBadge status={b.status} />
+                        {b.status === 'paid' ? (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold whitespace-nowrap ${b.paymentMethod === 'cash' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'}`}>
+                            {b.paymentMethod === 'cash' ? '💵 Paid Cash' : '💳 Paid Online'}
+                          </span>
+                        ) : (
+                          <StatusBadge status={b.status} />
+                        )}
                       </div>
+
+                      {/* 🛡️ Customer 3-Day SLA Completion Guarantee */}
+                      {!['completed', 'paid', 'cancelled'].includes(b.status) && (
+                        <div className="mt-1">
+                          {(() => {
+                            const days = Math.floor(dayjs().diff(dayjs(b.createdAt || b.scheduledDate), 'hour') / 24);
+                            if (days >= 3) {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">
+                                  🚨 Delayed beyond 3 days — Expedited Support Active
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                                🛡️ 3-Day Completion Guarantee (Day {days + 1} of 3)
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 mt-1.5">
                         <div className="flex items-center gap-1">
                           <Clock size={11} />

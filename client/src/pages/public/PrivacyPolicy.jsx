@@ -10,7 +10,7 @@ export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-white">
       <Header />
-      <main className="pt-24 pb-16 px-4 max-w-4xl mx-auto">
+      <main className="py-6 pb-16 px-4 max-w-4xl mx-auto">
         <button 
           onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-slate-500 hover:text-primary-600 mb-8 transition-colors"

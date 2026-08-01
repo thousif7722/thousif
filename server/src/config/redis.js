@@ -90,11 +90,25 @@ function getRedisSubscriber() {
 }
 
 // ── Cache Helpers ──────────────────────────────────────────────────────────────
+const memoryCache = new Map();
+const memoryExpirations = new Map();
+
+function cleanExpired(key) {
+  if (memoryExpirations.has(key) && memoryExpirations.get(key) < Date.now()) {
+    memoryCache.delete(key);
+    memoryExpirations.delete(key);
+  }
+}
+
 const cache = {
   async get(key) {
     try {
       const client = getRedisClient();
-      if (!client) return null;
+      if (!client) {
+        cleanExpired(key);
+        const data = memoryCache.get(key);
+        return data !== undefined ? JSON.parse(data) : null;
+      }
       const data = await client.get(key);
       return data ? JSON.parse(data) : null;
     } catch (err) {
@@ -106,7 +120,11 @@ const cache = {
   async set(key, value, ttlSeconds = 300) {
     try {
       const client = getRedisClient();
-      if (!client) return false;
+      if (!client) {
+        memoryCache.set(key, JSON.stringify(value));
+        memoryExpirations.set(key, Date.now() + ttlSeconds * 1000);
+        return true;
+      }
       await client.setEx(key, ttlSeconds, JSON.stringify(value));
       return true;
     } catch (err) {
@@ -118,7 +136,11 @@ const cache = {
   async del(key) {
     try {
       const client = getRedisClient();
-      if (!client) return false;
+      if (!client) {
+        memoryCache.delete(key);
+        memoryExpirations.delete(key);
+        return true;
+      }
       await client.del(key);
       return true;
     } catch (err) {
@@ -131,7 +153,16 @@ const cache = {
   async delPattern(pattern) {
     try {
       const client = getRedisClient();
-      if (!client) return;
+      if (!client) {
+        const regexPattern = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+        for (const key of memoryCache.keys()) {
+          if (regexPattern.test(key)) {
+            memoryCache.delete(key);
+            memoryExpirations.delete(key);
+          }
+        }
+        return;
+      }
       let cursor = 0;
       const keysToDelete = [];
       do {
@@ -154,7 +185,17 @@ const cache = {
   async increment(key, ttlSeconds = 900) {
     try {
       const client = getRedisClient();
-      if (!client) return null;
+      if (!client) {
+        cleanExpired(key);
+        const currentData = memoryCache.get(key);
+        let val = currentData !== undefined ? JSON.parse(currentData) : 0;
+        val += 1;
+        memoryCache.set(key, JSON.stringify(val));
+        if (currentData === undefined) {
+          memoryExpirations.set(key, Date.now() + ttlSeconds * 1000);
+        }
+        return val;
+      }
       const val = await client.incr(key);
       if (val === 1) await client.expire(key, ttlSeconds);
       return val;
@@ -167,7 +208,17 @@ const cache = {
   async hSet(key, field, value) {
     try {
       const client = getRedisClient();
-      if (!client) return false;
+      if (!client) {
+        let hash = memoryCache.get(key);
+        if (hash === undefined) {
+          hash = {};
+        } else {
+          hash = JSON.parse(hash);
+        }
+        hash[field] = value;
+        memoryCache.set(key, JSON.stringify(hash));
+        return true;
+      }
       await client.hSet(key, field, JSON.stringify(value));
       return true;
     } catch (err) {
@@ -179,7 +230,12 @@ const cache = {
   async hGet(key, field) {
     try {
       const client = getRedisClient();
-      if (!client) return null;
+      if (!client) {
+        const hash = memoryCache.get(key);
+        if (hash === undefined) return null;
+        const parsed = JSON.parse(hash);
+        return parsed[field] !== undefined ? parsed[field] : null;
+      }
       const data = await client.hGet(key, field);
       return data ? JSON.parse(data) : null;
     } catch (err) {
@@ -191,7 +247,13 @@ const cache = {
   async setNX(key, value, ttlSeconds) {
     try {
       const client = getRedisClient();
-      if (!client) return false;
+      if (!client) {
+        cleanExpired(key);
+        if (memoryCache.has(key)) return false;
+        memoryCache.set(key, JSON.stringify(value));
+        memoryExpirations.set(key, Date.now() + ttlSeconds * 1000);
+        return true;
+      }
       const result = await client.set(key, JSON.stringify(value), {
         NX: true,
         EX: ttlSeconds,

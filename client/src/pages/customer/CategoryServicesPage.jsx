@@ -6,6 +6,7 @@ import {
   Plus, Minus, ShoppingCart, X, ChevronRight, Zap, Info,
 } from 'lucide-react';
 import { selectUser } from '@/store/slices/authSlice';
+import { selectPublicSettings } from '@/store/slices/serviceSlice';
 import { apiService } from '@/services/api';
 import Header from '@/components/common/Header';
 import toast from 'react-hot-toast';
@@ -58,11 +59,21 @@ function ServiceCard({ service, qty, onQtyChange, onBook, accentColor }) {
         <div className="flex gap-4">
           {/* Service image / icon */}
           <div
-            className="w-24 h-24 rounded-xl shrink-0 flex items-center justify-center text-4xl overflow-hidden"
+            className="w-24 h-24 rounded-xl shrink-0 flex items-center justify-center text-4xl overflow-hidden relative bg-slate-100"
             style={{ background: `${accentColor}15` }}
           >
             {service.image ? (
-              <img src={service.image} alt={service.name} className="w-full h-full object-cover" />
+              <img
+                src={service.image}
+                alt={service.name}
+                className="w-full h-full object-cover"
+                onError={e => {
+                  e.target.style.display = 'none';
+                  if (e.target.parentNode) {
+                    e.target.parentNode.innerHTML = `<span style="font-size:2.25rem">${service.icon || '🛠️'}</span>`;
+                  }
+                }}
+              />
             ) : (
               <span>{service.icon || '🔧'}</span>
             )}
@@ -164,12 +175,18 @@ export default function CategoryServicesPage() {
   const { categoryName } = useParams();
   const navigate = useNavigate();
   const user = useSelector(selectUser);
+  const publicSettings = useSelector(selectPublicSettings);
 
   const decoded = useMemo(() => {
     try { return decodeURIComponent(categoryName); } catch { return categoryName; }
   }, [categoryName]);
 
-  const meta = CATEGORY_META[decoded] || { img: null, icon: '🔧', accent: '#6366f1', light: '#f0f4ff' };
+  const meta = CATEGORY_META[decoded] || {
+    img: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=800&q=80',
+    icon: '🛠️',
+    accent: '#3b82f6',
+    light: '#f0f4ff',
+  };
 
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -179,25 +196,26 @@ export default function CategoryServicesPage() {
   const [quantities, setQuantities] = useState({}); // serviceId → qty
   const [showFilter, setShowFilter] = useState(false);
 
-  // Fetch services from API
   useEffect(() => {
     setLoading(true);
     setError(null);
     apiService.getServices({ category: decoded, sort })
       .then(res => {
-        const data = res.data?.data || [];
-        setServices(data);
-        // Default all quantities to 1
-        const init = {};
-        data.forEach(s => { init[s._id] = 1; });
-        setQuantities(init);
+        setServices(res.data.data || []);
+        setLoading(false);
       })
       .catch(err => {
-        console.error(err);
+        console.error('Failed to fetch category services:', err);
         setError('Failed to load services. Please try again.');
-      })
-      .finally(() => setLoading(false));
+        setLoading(false);
+      });
   }, [decoded, sort]);
+
+  const customBanner = useMemo(() => {
+    return publicSettings?.categoryBanners?.find(
+      b => b.category?.toLowerCase() === decoded?.toLowerCase() && b.active !== false
+    );
+  }, [publicSettings, decoded]);
 
   // Client-side search filter
   const filtered = useMemo(() => {
@@ -209,6 +227,11 @@ export default function CategoryServicesPage() {
       s.tags?.some(t => t.toLowerCase().includes(q))
     );
   }, [services, search]);
+
+  const displayHeroImg = customBanner?.heroImage || meta.img;
+  const displayTitle = customBanner?.title || decoded;
+  const displaySubtitle = customBanner?.subtitle || (loading ? '…' : `${filtered?.length || 0} service${filtered?.length !== 1 ? 's' : ''} available`);
+  const displayBadge = customBanner?.badge;
 
   const handleQtyChange = useCallback((id, qty) => {
     setQuantities(prev => ({ ...prev, [id]: qty }));
@@ -224,16 +247,16 @@ export default function CategoryServicesPage() {
 
       {/* Hero banner */}
       <div className="relative overflow-hidden" style={{ paddingTop: '4rem' }}>
-        <div className="relative h-44 sm:h-52 overflow-hidden">
-          {meta.img && (
+        <div className="relative h-48 sm:h-56 overflow-hidden">
+          {displayHeroImg && (
             <img
-              src={meta.img}
-              alt={decoded}
+              src={displayHeroImg}
+              alt={displayTitle}
               className="w-full h-full object-cover"
             />
           )}
           {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-transparent" />
           <div className="absolute inset-0 flex flex-col justify-end p-5 pb-6">
             <button
               onClick={() => navigate(-1)}
@@ -241,12 +264,19 @@ export default function CategoryServicesPage() {
             >
               <ChevronLeft size={20} />
             </button>
+
+            {displayBadge && (
+              <span className="bg-amber-400 text-slate-900 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full w-max mb-2 shadow-sm">
+                {displayBadge}
+              </span>
+            )}
+
             <div className="flex items-center gap-3">
               <span className="text-4xl">{meta.icon}</span>
               <div>
-                <h1 className="text-2xl font-extrabold text-white leading-tight">{decoded}</h1>
-                <p className="text-white/70 text-sm mt-0.5">
-                  {loading ? '…' : `${filtered.length} service${filtered.length !== 1 ? 's' : ''} available`}
+                <h1 className="text-2xl font-extrabold text-white leading-tight">{displayTitle}</h1>
+                <p className="text-white/80 text-sm mt-0.5 font-medium">
+                  {displaySubtitle}
                 </p>
               </div>
             </div>

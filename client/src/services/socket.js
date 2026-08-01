@@ -4,7 +4,20 @@ import { store } from '@/store';
 import { addNotification } from '@/store/slices/notificationSlice';
 import { updateBookingStatus } from '@/store/slices/bookingSlice';
 
-const SOCKET_URL = import.meta.env.VITE_API_URL || window.location.origin;
+const getSocketUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol;
+    if (protocol === 'capacitor:' || protocol === 'file:' || protocol === 'ionic:') {
+      return 'http://10.43.167.48:5000';
+    }
+  }
+  return window.location.origin;
+};
+
+const SOCKET_URL = getSocketUrl();
 
 let socket = null;
 let locationInterval = null;
@@ -67,7 +80,7 @@ export function connectSocket() {
   });
 
   socket.on('booking:no_providers', (data) => {
-    toast.error(data.message || 'No providers available in your area.', { duration: 8000 });
+    toast.error(data.message || 'No providers available in your area.', { id: 'no_providers_toast', duration: 4000 });
   });
 
   // ── Provider-specific events ───────────────────────────────────────────────
@@ -82,13 +95,16 @@ export function connectSocket() {
     // Play alert sound
     playNotificationSound();
     toast(`New booking request! You have ${data.acceptTimeoutSeconds}s to accept.`, {
+      id: 'booking_new_request_toast',
       icon: '🔔',
-      duration: data.acceptTimeoutSeconds * 1000,
+      duration: 4000,
     });
   });
 
   socket.on('booking:expired', () => {
-    toast('Booking request expired.', { icon: '⏰' });
+    stopRapidoAlertSound();
+    toast.dismiss('booking_new_request_toast');
+    toast('Booking request expired.', { id: 'booking_expired_toast', icon: '⏰', duration: 3000 });
   });
 
   socket.on('payment:received', (data) => {
@@ -137,7 +153,7 @@ export function startLocationTracking() {
         }
       },
       (err) => console.warn('[GPS] Error:', err.message),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      { enableHighAccuracy: false, timeout: 6000, maximumAge: 15000 }
     );
   };
 
@@ -186,24 +202,87 @@ export function toggleProviderAvailability(isOnline) {
   socket?.emit('provider:toggle_availability', { isOnline });
 }
 
-// ── Utilities ──────────────────────────────────────────────────────────────────
-function playNotificationSound() {
+// ── Rapido-Style Loud Siren Alert Sound Synthesizer ─────────────────────────────
+let alertAudioCtx = null;
+let alertIntervalId = null;
+
+export function playRapidoAlertSound(durationMs = 15000) {
+  stopRapidoAlertSound();
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    oscillator.frequency.value = 880;
-    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    oscillator.start(ctx.currentTime);
-    oscillator.stop(ctx.currentTime + 0.5);
-  } catch {}
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    alertAudioCtx = new AudioContext();
+
+    let toggle = false;
+    const playChimeTone = () => {
+      if (!alertAudioCtx || alertAudioCtx.state === 'closed') return;
+      try {
+        const osc = alertAudioCtx.createOscillator();
+        const gain = alertAudioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(alertAudioCtx.destination);
+
+        // Rapido-style dual chime frequency: 880Hz (A5) & 1174.66Hz (D6)
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(toggle ? 1174.66 : 880, alertAudioCtx.currentTime);
+        toggle = !toggle;
+
+        gain.gain.setValueAtTime(0.5, alertAudioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, alertAudioCtx.currentTime + 0.25);
+
+        osc.start(alertAudioCtx.currentTime);
+        osc.stop(alertAudioCtx.currentTime + 0.25);
+      } catch (e) {
+        console.warn('[AlertSound] Error playing chime:', e);
+      }
+    };
+
+    // Play immediately, then repeat every 320ms for durationMs
+    playChimeTone();
+    alertIntervalId = setInterval(playChimeTone, 320);
+
+    // Auto stop after durationMs
+    setTimeout(() => {
+      stopRapidoAlertSound();
+    }, durationMs);
+  } catch (err) {
+    console.warn('[AlertSound] Failed to initialize Web Audio API:', err);
+  }
+}
+
+export function stopRapidoAlertSound() {
+  if (alertIntervalId) {
+    clearInterval(alertIntervalId);
+    alertIntervalId = null;
+  }
+  if (alertAudioCtx) {
+    try {
+      if (alertAudioCtx.state !== 'closed') {
+        alertAudioCtx.close();
+      }
+    } catch {}
+    alertAudioCtx = null;
+  }
+}
+
+function playNotificationSound() {
+  playRapidoAlertSound(10000);
 }
 
 function showNotificationBanner(message) {
-  if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification('ServiceHub', { body: message, icon: '/logo.svg' });
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then((reg) => {
+          reg.showNotification('ServiceHub', { body: message, icon: '/logo.svg' });
+        }).catch(() => {
+          try { new Notification('ServiceHub', { body: message, icon: '/logo.svg' }); } catch {}
+        });
+      } else {
+        try { new Notification('ServiceHub', { body: message, icon: '/logo.svg' }); } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn('[Notification] Failed to display system notification:', e);
   }
 }

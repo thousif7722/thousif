@@ -1,7 +1,26 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const BASE_URL = `${import.meta.env.VITE_API_URL || ''}/api/v1`;
+const getBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return `${import.meta.env.VITE_API_URL}/api/v1`;
+  }
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    // Let Vite proxy handle mobile LAN traffic (bypasses Windows Firewall port 5000 blocks)
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return '/api/v1';
+    }
+    // Capacitor / Cordova / Native File WebView
+    if (protocol === 'capacitor:' || protocol === 'file:' || protocol === 'ionic:') {
+      return 'http://10.43.167.48:5000/api/v1';
+    }
+  }
+  return '/api/v1';
+};
+
+const BASE_URL = getBaseUrl();
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -22,6 +41,7 @@ api.interceptors.request.use(
 // ── Response interceptor — handle token refresh & errors ─────────────────────
 let isRefreshing = false;
 let failedQueue = [];
+let lastNetworkErrorToastTime = 0;
 
 function processQueue(error, token = null) {
   failedQueue.forEach((prom) => error ? prom.reject(error) : prom.resolve(token));
@@ -46,36 +66,38 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = localStorage.getItem('refreshToken');
-      if (!refreshToken) {
-        isRefreshing = false;
-        clearAuthAndRedirect();
-        return Promise.reject(error);
-      }
-
       try {
-        const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
-        const { accessToken, refreshToken: newRefreshToken } = data;
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', newRefreshToken);
-        api.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
-        processQueue(null, accessToken);
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) throw new Error('No refresh token');
+
+        const { data } = await axios.post(`${BASE_URL}/auth/refresh-token`, { refreshToken });
+        const newToken = data.data.accessToken;
+
+        localStorage.setItem('accessToken', newToken);
+        api.defaults.headers.common.Authorization = `Bearer ${newToken}`;
+        processQueue(null, newToken);
+
         return api(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError, null);
+      } catch (refreshErr) {
+        processQueue(refreshErr, null);
         clearAuthAndRedirect();
-        return Promise.reject(refreshError);
+        return Promise.reject(refreshErr);
       } finally {
         isRefreshing = false;
       }
     }
 
-    // Handle specific status codes
+    // Handle specific status codes & network errors
     if (error.response?.status === 429) {
-      toast.error('Too many requests. Please slow down.');
+      toast.error('Too many requests. Please wait a moment.');
     } else if (error.response?.status >= 500) {
       toast.error('Server error. Please try again later.');
+    } else if (!error.response && error.code === 'ERR_NETWORK') {
+      const now = Date.now();
+      if (now - lastNetworkErrorToastTime > 15000) {
+        lastNetworkErrorToastTime = now;
+        toast.error('Connecting to server... Please check your network connection.', { id: 'network-err' });
+      }
     }
 
     return Promise.reject(error);
@@ -95,7 +117,8 @@ function clearAuthAndRedirect() {
 export const apiService = {
   // Auth
   firebaseLogin: (data) => api.post('/auth/firebase-login', data),
-  activatePlus: () => api.post('/auth/plus'),
+  activatePlus: (data) => api.post('/auth/plus', data),
+  updateProfile: (data) => api.put('/auth/profile', data),
 
   // Services
   getServices: (params) => api.get('/services', { params }),
@@ -113,6 +136,7 @@ export const apiService = {
   approveMaterials: (id) => api.put(`/bookings/${id}/materials/approve`),
   completeJob: (id, data) => api.put(`/bookings/${id}/complete`, data),
   cancelBooking: (id, reason) => api.put(`/bookings/${id}/cancel`, { reason }),
+  retryMatch: (id) => api.post(`/bookings/${id}/retry-match`),
   getPaymentStatus: (bookingId) => api.get(`/payments/bookings/${bookingId}/status`),
   confirmCashPayment: (bookingId) => api.put(`/payments/bookings/${bookingId}/cash-confirm`),
   trackProvider: (id) => api.get(`/bookings/${id}/track`),
@@ -145,6 +169,21 @@ export const apiService = {
   createComplaint: (data) => api.post('/complaints', data),
   getMyComplaints: () => api.get('/complaints/my'),
   getComplaint: (ticketNumber) => api.get(`/complaints/${ticketNumber}`),
+  addComplaintComment: (id, text) => api.post(`/complaints/${id}/comment`, { text }),
+  // Provider complaint resolution workflow
+  scheduleRevisit: (id, data) => api.post(`/complaints/${id}/revisit`, data),
+  uploadResolutionProof: (id, formData) => api.post(`/complaints/${id}/proof`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  generateResolutionOtp: (id) => api.post(`/complaints/${id}/resolve/otp`),
+  confirmResolutionOtp: (id, otp) => api.post(`/complaints/${id}/resolve/confirm`, { otp }),
+  // Customer escalation
+  escalateComplaint: (id, reason) => api.post(`/complaints/${id}/escalate`, { reason }),
+
+  // On-Site Inspection & Detected Issues Quotation
+  submitQuote: (id, data) => api.post(`/bookings/${id}/quote`, data),
+  respondToQuote: (id, action) => api.put(`/bookings/${id}/quote/respond`, { action }),
+  reportOffAppDeal: (id) => api.post(`/bookings/${id}/report-fraud`),
+
+
 
   // Notifications
   getNotifications: (params) => api.get('/notifications', { params }),
@@ -162,6 +201,9 @@ export const apiService = {
   warnProvider: (id, reason) => api.put(`/admin/providers/${id}/warn`, { reason }),
   blockProvider: (id, reason) => api.put(`/admin/providers/${id}/block`, { reason }),
   unblockProvider: (id) => api.put(`/admin/providers/${id}/unblock`),
+  updateProviderTier: (id, tier) => api.put(`/admin/providers/${id}/tier`, { tier }),
+  bulkApproveProviders: (providerIds) => api.post('/admin/providers/bulk-approve', { providerIds }),
+  autoDistributeKyc: () => api.post('/admin/providers/auto-distribute-kyc'),
   approveBank: (id) => api.put(`/admin/providers/${id}/bank/approve`),
   rejectBank: (id) => api.put(`/admin/providers/${id}/bank/reject`),
   getAdminBookings: (params) => api.get('/admin/bookings', { params }),
@@ -178,14 +220,19 @@ export const apiService = {
   // Admin Complaints
   getAdminComplaints: (params) => api.get('/admin/complaints', { params }),
   reassignComplaint: (id, action) => api.put(`/admin/complaints/${id}/reassign`, { action }),
-  // Provider Wallet & Commission
+  // Provider Wallet & Commission (Rapido Model)
   getProviderDues: (id) => api.get(`/admin/providers/${id}/dues`),
   adjustProviderWallet: (id, data) => api.put(`/admin/providers/${id}/wallet`, data),
   clearProviderDues: (id, data) => api.put(`/admin/providers/${id}/dues/clear`, data),
+  createCommissionOrder: (data) => api.post('/payments/commission/create-order', data),
+  verifyCommissionPayment: (data) => api.post('/payments/commission/verify', data),
   // Team Management
   getAdminTeam: () => api.get('/admin/team'),
+  getTeamWorkload: () => api.get('/admin/team/workload'),
   createTeamMember: (data) => api.post('/admin/team', data),
   updateTeamMember: (id, data) => api.put(`/admin/team/${id}`, data),
+  markStaffResigned: (id) => api.put(`/admin/team/${id}/resign`),
+  deleteStaffMember: (id) => api.delete(`/admin/team/${id}`),
   
 
   
@@ -205,6 +252,11 @@ export const apiService = {
   getCandidates: (params) => api.get('/admin/candidates', { params }),
   updateCandidateStatus: (id, data) => api.put(`/admin/candidates/${id}/status`, data),
   onboardCandidate: (id) => api.post(`/admin/candidates/${id}/onboard`),
+
+  // System Settings & Branding Media (Bagisto Style)
+  getAdminSettings: () => api.get('/admin/settings'),
+  updateAdminSettings: (data) => api.put('/admin/settings', data),
+  getPublicSettings: () => api.get('/services/public-settings'),
 };
 
 export default api;

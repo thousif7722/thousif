@@ -25,11 +25,12 @@ function globalErrorHandler(err, req, res, next) {
 
   if (err.name === 'ValidationError') {
     statusCode = 422;
-    const fields = Object.values(err.errors).map((e) => ({
-      field: e.path,
-      message: e.message,
-    }));
-    message = 'Validation failed';
+    const fields = err.errors 
+      ? Object.values(err.errors).map((e) => ({ field: e.path, message: e.message }))
+      : err.fields || [];
+    
+    const fieldDetails = fields.map(f => f.message || `${f.field} is invalid`).join(', ');
+    message = fieldDetails ? `Validation failed: ${fieldDetails}` : 'Validation failed';
     errorCode = 'VALIDATION_ERROR';
 
     return res.status(statusCode).json({

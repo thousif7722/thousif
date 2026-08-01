@@ -74,38 +74,56 @@ router.post('/candidates/:id/onboard', authorize('admin'), async (req, res) => {
   if (candidate.status !== 'selected') throw new AppError('Candidate must be in "selected" status to onboard', 400);
 
   // Check if already registered
-  const existingUser = await User.findOne({ phone: candidate.phone });
-  const existingProvider = await Provider.findOne({ phone: candidate.phone });
-  if (existingUser || existingProvider) {
-    throw new AppError('Phone number already exists in the system', 400);
-  }
+  let existingUser = await User.findOne({ phone: candidate.phone });
+  let existingProvider = await Provider.findOne({ phone: candidate.phone });
 
   let newAccount;
 
   // Onboard as Provider (Technician)
   if (candidate.roleApplied === 'technician') {
-    newAccount = await Provider.create({
-      name: candidate.name,
-      phone: candidate.phone,
-      email: candidate.email,
-      city: candidate.city || 'Bangalore',
-      state: 'KA',
-      approvalStatus: 'pending',
-    });
+    if (existingProvider) {
+      existingProvider.name = candidate.name;
+      if (candidate.email) existingProvider.email = candidate.email;
+      existingProvider.city = candidate.city || 'Bangalore';
+      existingProvider.approvalStatus = 'pending';
+      await existingProvider.save();
+      newAccount = existingProvider;
+    } else {
+      newAccount = await Provider.create({
+        name: candidate.name,
+        phone: candidate.phone,
+        email: candidate.email,
+        city: candidate.city || 'Bangalore',
+        state: 'KA',
+        approvalStatus: 'pending',
+      });
+    }
   } 
-  // Onboard as Employee (Manager, Team Leader, Intern)
+  // Onboard as Employee (Manager, Team Leader, Intern, Staff)
   else {
     let role = 'staff';
     if (candidate.roleApplied === 'intern') role = 'intern';
     if (candidate.roleApplied === 'manager') role = 'manager';
     if (candidate.roleApplied === 'team_leader') role = 'team_leader';
 
-    newAccount = await User.create({
-      name: candidate.name,
-      phone: candidate.phone,
-      email: candidate.email,
-      role: role,
-    });
+    if (existingUser) {
+      existingUser.name = candidate.name;
+      if (candidate.email) existingUser.email = candidate.email;
+      existingUser.role = role;
+      existingUser.status = 'active';
+      existingUser.isBlocked = false;
+      existingUser.blockReason = undefined;
+      await existingUser.save();
+      newAccount = existingUser;
+    } else {
+      newAccount = await User.create({
+        name: candidate.name,
+        phone: candidate.phone,
+        email: candidate.email,
+        role: role,
+        status: 'active',
+      });
+    }
   }
 
   // Mark as onboarded

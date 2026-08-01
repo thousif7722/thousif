@@ -19,6 +19,20 @@ const QUEUE_OPTIONS = {
   },
 };
 
+// SCALE FIX: Priority levels — higher number = higher priority
+// booking:match_provider (10) must never be blocked by invoice PDF (1)
+const JOB_PRIORITIES = {
+  match_provider: 10,     // Booking matching — customer is waiting
+  booking_timeout: 9,     // Provider timeout handling
+  send_otp: 8,            // OTP delivery
+  process_payment: 7,     // Payment processing
+  process_refund: 6,      // Refund processing
+  booking_update: 3,      // Notification
+  provider_payout: 2,     // Payout notification
+  generate_invoice: 1,    // PDF generation — lowest priority
+  check_commission_dues: 1,
+};
+
 const createMockQueue = (name) => ({
   name,
   add: async (jobName, data, opts) => {
@@ -74,6 +88,14 @@ function initQueues() {
     // ── Scheduled Jobs (recurring) ───────────────────────────────────────────────
     scheduleRecurringJobs();
 
+    // Universal 15-second fast pending job match fallback
+    setInterval(() => {
+      try {
+        const { matchAllUnassignedBookings } = require('../modules/booking/booking.service');
+        matchAllUnassignedBookings().catch(() => {});
+      } catch {}
+    }, 15000);
+
     logger.info('✅ BullMQ queues and workers initialized');
   } catch (error) {
     logger.warn('⚠️ BullMQ queue initialization failed (Redis might be down). Application will continue without background jobs.');
@@ -87,17 +109,36 @@ function createBookingWorker() {
     const { name, data } = job;
     logger.debug(`Processing booking job: ${name}`, data);
 
-    switch (name) {
-      case 'match_provider':
-        return processProviderMatching(job);
-      case 'booking_timeout':
-        return processBookingTimeout(job);
-      case 'send_otp':
-        return processSendOTP(job);
-      case 'check_commission_dues':
-        return processCommissionDuesCheck();
-      default:
-        logger.warn(`Unknown booking job: ${name}`);
+    // SCALE FIX: Per-job try/catch — unhandled error in one job must NOT crash the entire worker
+    try {
+      switch (name) {
+        case 'match_provider':
+          return await processProviderMatching(job);
+        case 'match_unassigned_pending':
+          const { matchAllUnassignedBookings } = require('../modules/booking/booking.service');
+          return await matchAllUnassignedBookings();
+        case 'booking_timeout':
+          return await processBookingTimeout(job);
+        case 'check_timeouts':
+          return await processCheckTimeouts();
+        case 'send_otp':
+          return await processSendOTP(job);
+        case 'check_commission_dues':
+          return await processCommissionDuesCheck();
+        case 'check_complaint_escalations':
+          return await processComplaintEscalations();
+
+        default:
+          logger.warn(`Unknown booking job: ${name}`);
+      }
+    } catch (err) {
+      logger.error(`[BookingWorker] Job '${name}' (id:${job.id}) failed:`, {
+        message: err.message,
+        jobData: data,
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      });
+      // Re-throw so BullMQ marks it as failed and retries with backoff
+      throw err;
     }
   }, {
     ...QUEUE_OPTIONS,
@@ -200,41 +241,103 @@ async function processBookingTimeout(job) {
   }, { delay: 1000 });
 }
 
+async function processCheckTimeouts() {
+  const { Booking } = require('../models');
+  const timedOutBookings = await Booking.find({
+    status: 'assigned',
+    assignmentTimeout: { $lte: new Date() },
+  }).select('_id providerId').lean();
+
+  if (timedOutBookings.length === 0) return;
+
+  logger.info(`Found ${timedOutBookings.length} timed-out booking assignments. Triggering timeout jobs...`);
+
+  for (const booking of timedOutBookings) {
+    if (booking.providerId) {
+      await bookingQueue.add('booking_timeout', {
+        bookingId: booking._id.toString(),
+        providerId: booking.providerId.toString(),
+      });
+    }
+  }
+}
+
 async function processSendOTP(job) {
   const { phone, otp, type } = job.data;
   const smsService = require('../services/sms.service');
   await smsService.sendOTP(phone, otp, type);
 }
 
-// ── Commission Dues Enforcement ────────────────────────────────────────────────
+// ── Complaint Auto-Escalation ───────────────────────────────────────────────────
+async function processComplaintEscalations() {
+  const { autoEscalateStaleComplaints, autoFreezeProviders } = require('../modules/complaint/complaint.routes');
+  
+  const escalated = await autoEscalateStaleComplaints();
+  if (escalated > 0) {
+    logger.warn(`[ComplaintEscalation] Auto-escalated ${escalated} stale complaint(s) (48h unresolved)`);
+  }
+
+  const frozen = await autoFreezeProviders();
+  if (frozen > 0) {
+    logger.warn(`[ComplaintFreeze] Auto-frozen ${frozen} provider(s) (7 days unresolved complaint)`);
+  }
+}
+
+
+// ── Commission Dues Enforcement (Rapido Model) ─────────────────────────────────
 async function processCommissionDuesCheck() {
-  const { Provider } = require('../models');
+  const { Provider, Notification, User } = require('../models');
   const { emitToProvider } = require('../socket');
+  const pushService = require('../services/push.service');
 
   const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
   const cutoffDate = new Date(Date.now() - THREE_DAYS_MS);
 
-  // Find providers with overdue cash commission (due for 3+ days, not on hold yet)
+  // Find providers exceeding ₹500 pending commission threshold OR due > 3 days
   const overdueProviders = await Provider.find({
-    'earnings.pendingCommission': { $gt: 0 },
-    'earnings.commissionDueSince': { $lte: cutoffDate },
+    $or: [
+      { 'earnings.pendingCommission': { $gte: 500 } },
+      {
+        'earnings.pendingCommission': { $gt: 0 },
+        'earnings.commissionDueSince': { $lte: cutoffDate },
+      },
+    ],
+    'earnings.isOnHold': { $ne: true },
   });
 
   for (const provider of overdueProviders) {
-    if (!provider.earnings.isOnHold) {
-      provider.earnings.isOnHold = true;
-      await provider.save();
-      logger.warn(`Provider ${provider.name} (${provider._id}) placed on HOLD — unpaid commission ₹${provider.earnings.pendingCommission}`);
+    provider.earnings.isOnHold = true;
+    await provider.save();
+    logger.warn(`Provider ${provider.name} (${provider._id}) placed on HOLD — unpaid commission ₹${provider.earnings.pendingCommission}`);
 
-      // Notify provider via socket
-      emitToProvider(provider._id.toString(), 'notification:push', {
-        title: '⚠️ Account On Hold',
-        body: `You have ₹${provider.earnings.pendingCommission} in unpaid platform commission. Pay immediately to resume accepting jobs.`,
-      });
+    const title = '🔴 Job Dispatch Suspended (Commission Limit Exceeded)';
+    const body = `You owe ₹${provider.earnings.pendingCommission} in unpaid platform commission (limit ₹500). Pay via PhonePe/UPI on the app to resume accepting jobs immediately.`;
+
+    // 1. Save Notification document for Provider portal inbox
+    await Notification.create({
+      userId: provider._id,
+      title,
+      body,
+      type: 'account_hold',
+      referenceId: provider._id,
+    }).catch(err => logger.error('Failed to create Notification doc:', err.message));
+
+    // 2. Real-time Socket Event
+    emitToProvider(provider._id.toString(), 'notification:push', {
+      title,
+      body,
+      pendingCommission: provider.earnings.pendingCommission,
+      isOnHold: true,
+    });
+
+    // 3. Mobile FCM Push Notification
+    const user = await User.findById(provider._id).select('fcmToken').lean();
+    if (user?.fcmToken) {
+      pushService.send(user.fcmToken, title, body).catch(() => {});
     }
   }
 
-  logger.info(`Commission dues check: ${overdueProviders.length} providers checked.`);
+  logger.info(`Rapido Commission dues check: ${overdueProviders.length} providers placed on hold.`);
 }
 
 // ── Payment Worker ─────────────────────────────────────────────────────────────
@@ -411,6 +514,12 @@ function createInvoiceWorker() {
 
 // ── Recurring Scheduled Jobs ───────────────────────────────────────────────────
 function scheduleRecurringJobs() {
+  // Rapid scan for unassigned pending bookings every 15 seconds
+  bookingQueue.add('match_unassigned_pending', {}, {
+    repeat: { every: 15000 }, // Every 15 seconds
+    jobId: 'rapid_unassigned_pending_matcher',
+  });
+
   // Check timed-out booking assignments every minute
   bookingQueue.add('check_timeouts', {}, {
     repeat: { every: 60000 }, // Every 1 minute
@@ -428,6 +537,13 @@ function scheduleRecurringJobs() {
     repeat: { cron: '30 20 * * *' }, // 8:30 PM UTC = 2:00 AM IST
     jobId: 'daily_settlement',
   });
+
+  // Hourly complaint escalation scan — auto-escalate if tech doesn't resolve in 48h
+  bookingQueue.add('check_complaint_escalations', {}, {
+    repeat: { every: 60 * 60 * 1000 }, // Every 1 hour
+    jobId: 'hourly_complaint_escalation_scan',
+  });
+
 }
 
 // ── Graceful shutdown ──────────────────────────────────────────────────────────

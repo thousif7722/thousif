@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const mongoose = require('mongoose');
 const { Service } = require('../../models');
 const { cache } = require('../../config/redis');
 const router = express.Router();
@@ -67,12 +68,17 @@ router.get('/categories', async (req, res) => {
   ]);
   const countMap = Object.fromEntries(counts.map(c => [c._id, c.count]));
 
-  const categoryNames = Object.keys(countMap);
+  // Merge default CATEGORY_META keys with DB categories
+  const categoryNames = Array.from(new Set([...Object.keys(CATEGORY_META), ...Object.keys(countMap)]));
   const categories = categoryNames.map(name => ({
     name,
     slug: encodeURIComponent(name),
     serviceCount: countMap[name] || 0,
-    ...(CATEGORY_META[name] || { img: null, icon: '🔧', color: '#6b7280' }),
+    ...(CATEGORY_META[name] || {
+      img: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=400&q=80',
+      icon: '🛠️',
+      color: '#3b82f6'
+    }),
   }));
 
   // Sort by display order defined in CATEGORY_META
@@ -88,10 +94,69 @@ router.get('/categories', async (req, res) => {
 });
 
 /**
+ * GET /services/public-settings
+ * Returns public site settings (siteName, logoUrl, tagline, videoSpotlights)
+ */
+router.get('/public-settings', async (req, res) => {
+  const { SystemSettings } = require('../../models');
+  let settings = await SystemSettings.findOne({ key: 'global' }).lean();
+  if (!settings) {
+    settings = {
+      siteName: 'ServiceHub',
+      logoUrl: '/logo.png',
+      tagline: 'Premium Home Services at your Doorstep',
+      videoSpotlights: [],
+    };
+  }
+  res.json({ success: true, data: settings });
+});
+
+/**
+ * GET /services/options/catalog
+ * Returns category options / rate cards for on-site quotations (e.g. Gas Leak, PCB Repair)
+ */
+router.get('/options/catalog', async (req, res) => {
+  const { category } = req.query;
+  const filter = { isActive: true };
+  if (category) filter.category = category;
+
+  const services = await Service.find(filter).select('name category subcategory basePrice serviceType categoryOptions').lean();
+  
+  const rateCardItems = [];
+  services.forEach(s => {
+    if (s.categoryOptions && s.categoryOptions.length > 0) {
+      s.categoryOptions.forEach(opt => {
+        rateCardItems.push({
+          serviceId: s._id,
+          serviceName: s.name,
+          category: s.category,
+          name: opt.optionName,
+          basePrice: opt.fixedPrice,
+          description: opt.description,
+        });
+      });
+    } else {
+      rateCardItems.push({
+        serviceId: s._id,
+        serviceName: s.name,
+        category: s.category,
+        name: `${s.name} - Standard Fix`,
+        basePrice: s.basePrice,
+      });
+    }
+  });
+
+  res.json({ success: true, count: rateCardItems.length, data: rateCardItems });
+});
+
+/**
  * GET /services/:id
  * Returns a single service by ID
  */
 router.get('/:id', async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(404).json({ success: false, error: 'Service not found' });
+  }
   const service = await Service.findById(req.params.id).lean();
   if (!service) return res.status(404).json({ success: false, error: 'Service not found' });
   res.json({ success: true, data: service });

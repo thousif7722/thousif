@@ -16,11 +16,13 @@ const PERMISSION_OPTS = [
 
 export default function AdminTeam() {
   const [team, setTeam] = useState([]);
+  const [workload, setWorkload] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ name: '', phone: '', email: '', permissions: [] });
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [rebalancing, setRebalancing] = useState(false);
 
   useEffect(() => {
     fetchTeam();
@@ -29,12 +31,31 @@ export default function AdminTeam() {
   async function fetchTeam() {
     try {
       setLoading(true);
-      const res = await apiService.getAdminTeam();
-      setTeam(res.data.data);
+      const [teamRes, workloadRes] = await Promise.all([
+        apiService.getAdminTeam(),
+        apiService.getTeamWorkload().catch(() => null),
+      ]);
+      setTeam(teamRes.data.data);
+      if (workloadRes?.data?.data) {
+        setWorkload(workloadRes.data.data);
+      }
     } catch (err) {
       toast.error('Failed to load team');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleAutoDistribute() {
+    setRebalancing(true);
+    try {
+      const res = await apiService.autoDistributeKyc();
+      toast.success(res.data.message);
+      fetchTeam();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Rebalance failed');
+    } finally {
+      setRebalancing(false);
     }
   }
 
@@ -55,13 +76,13 @@ export default function AdminTeam() {
         await apiService.updateTeamMember(editingId, { permissions: formData.permissions });
         toast.success('Permissions updated');
       } else {
-        await apiService.createTeamMember(formData);
-        toast.success('Team member added');
+        const res = await apiService.createTeamMember(formData);
+        toast.success(res.data?.message || 'Team member added');
       }
       setShowModal(false);
       fetchTeam();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Action failed');
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Action failed');
     } finally {
       setSubmitting(false);
     }
@@ -89,22 +110,60 @@ export default function AdminTeam() {
     setShowModal(true);
   }
 
+  const summary = workload?.summary;
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-20 max-w-7xl mx-auto px-4 sm:px-6">
+      <div className="py-6 max-w-7xl mx-auto px-4 sm:px-6">
         
+        {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <Users className="text-primary-600" /> Team Management
+              <Users className="text-primary-600" /> Team & Workload Management
             </h1>
-            <p className="text-sm text-slate-500">Hire employees and assign them department permissions.</p>
+            <p className="text-sm text-slate-500">Manage 30+ staff members, track KYC queues & rebalance verification workload.</p>
           </div>
-          <button onClick={openNew} className="btn-primary flex items-center gap-2">
-            <UserPlus size={18} /> Add Employee
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleAutoDistribute}
+              disabled={rebalancing}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 transition shadow-sm"
+            >
+              ⚡ {rebalancing ? 'Rebalancing…' : 'Smart Load Rebalance'}
+            </button>
+            <button onClick={openNew} className="btn-primary flex items-center gap-2 text-sm">
+              <UserPlus size={16} /> Add Employee
+            </button>
+          </div>
         </div>
+
+        {/* Live Workload Metrics Strip */}
+        {summary && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-400 font-semibold uppercase">Total Staff Members</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{summary.totalStaff}</p>
+              <p className="text-[11px] text-emerald-600 mt-0.5">Active team members</p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-400 font-semibold uppercase">Pending KYC Applications</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">{summary.totalPendingKyc}</p>
+              <p className="text-[11px] text-amber-600 mt-0.5">Awaiting staff verification</p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-400 font-semibold uppercase">Target Queue / Staff</p>
+              <p className="text-2xl font-bold text-blue-600 mt-1">~{summary.avgPendingPerStaff}</p>
+              <p className="text-[11px] text-blue-600 mt-0.5">Evenly balanced queue target</p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-400 font-semibold uppercase">Unassigned Applications</p>
+              <p className="text-2xl font-bold text-purple-600 mt-1">{summary.unassignedKyc}</p>
+              <p className="text-[11px] text-purple-600 mt-0.5">Ready for auto-routing</p>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="h-40 flex items-center justify-center"><Loader className="animate-spin text-primary-600" /></div>
@@ -115,51 +174,110 @@ export default function AdminTeam() {
                 <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="px-6 py-4">Employee</th>
-                    <th className="px-6 py-4">Contact</th>
+                    <th className="px-6 py-4">Online Status</th>
+                    <th className="px-6 py-4">Assigned KYC Queue</th>
+                    <th className="px-6 py-4">Verified Today</th>
+                    <th className="px-6 py-4">Open Complaints</th>
+                    <th className="px-6 py-4">Workload Status</th>
                     <th className="px-6 py-4">Permissions</th>
-                    <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {team.length === 0 ? (
                     <tr>
-                      <td colSpan="5" className="px-6 py-8 text-center text-slate-400">No team members hired yet.</td>
+                      <td colSpan="8" className="px-6 py-8 text-center text-slate-400">No team members hired yet.</td>
                     </tr>
-                  ) : team.map(member => (
-                    <tr key={member._id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-slate-800">{member.name}</div>
-                        <div className="text-xs text-slate-400">Joined {dayjs(member.createdAt).format('MMM D, YYYY')}</div>
-                      </td>
-                      <td className="px-6 py-4 text-slate-600">
-                        {member.phone}<br/>
-                        <span className="text-xs text-slate-400">{member.email || '-'}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1 max-w-[250px]">
-                          {member.permissions?.length > 0 ? member.permissions.map(p => (
-                            <span key={p} className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-100">
-                              {p.replace('manage_', '').toUpperCase()}
+                  ) : team.map(member => {
+                    const wl = workload?.staffWorkload?.find(w => w._id === member._id);
+                    const isRecentlyActive = member.isOnline || (member.lastActiveAt && (new Date() - new Date(member.lastActiveAt)) < 5 * 60 * 1000);
+                    const isResigned = member.status === 'resigned';
+
+                    async function handleResign() {
+                      if (!window.confirm(`Mark ${member.name} as RESIGNED? This revokes access and auto-redistributes their pending queue.`)) return;
+                      try {
+                        const res = await apiService.markStaffResigned(member._id);
+                        toast.success(res.data.message);
+                        fetchTeam();
+                      } catch (err) {
+                        toast.error(err.response?.data?.error || 'Failed to process resignation');
+                      }
+                    }
+
+                    async function handleDelete() {
+                      if (!window.confirm(`Permanently DELETE staff member ${member.name}? Unassigned tasks will be redistributed.`)) return;
+                      try {
+                        const res = await apiService.deleteStaffMember(member._id);
+                        toast.success(res.data.message);
+                        fetchTeam();
+                      } catch (err) {
+                        toast.error(err.response?.data?.error || 'Delete failed');
+                      }
+                    }
+
+                    return (
+                      <tr key={member._id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <div className="font-semibold text-slate-800">{member.name}</div>
+                            {isResigned && <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">Resigned</span>}
+                          </div>
+                          <div className="text-xs text-slate-400">{member.phone} • {member.email || 'No email'}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {isResigned ? (
+                            <span className="text-xs text-slate-400 font-medium">⚪ Inactive</span>
+                          ) : isRecentlyActive ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Active Online
                             </span>
-                          )) : <span className="text-xs text-slate-400">No access</span>}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${member.isBlocked ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                          {member.isBlocked ? 'Blocked' : 'Active'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <button onClick={() => openEdit(member)} className="text-primary-600 hover:text-primary-800 font-medium">Edit</button>
-                          <button onClick={() => toggleBlock(member._id, member.isBlocked)} className="text-slate-400 hover:text-slate-600">
-                            {member.isBlocked ? 'Unblock' : 'Block'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                              ⚪ Offline ({member.lastActiveAt ? dayjs(member.lastActiveAt).format('HH:mm') : '—'})
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 font-bold text-amber-600">
+                          {wl?.pendingKyc ?? 0} applications
+                        </td>
+                        <td className="px-6 py-4 text-emerald-600 font-semibold">
+                          {wl?.verifiedToday ?? 0} approved
+                        </td>
+                        <td className="px-6 py-4 text-slate-700">
+                          {wl?.openComplaints ?? 0}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${
+                            wl?.status === 'Heavy' ? 'bg-red-100 text-red-700' :
+                            wl?.status === 'Light' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                          }`}>
+                            {wl?.status || 'Balanced'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {member.permissions?.map(p => (
+                              <span key={p} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">
+                                {p.replace('manage_', '')}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => openEdit(member)} className="text-xs font-semibold text-primary-600 hover:underline">Edit</button>
+                            {!isResigned && (
+                              <button onClick={handleResign} className="text-xs font-semibold text-amber-600 hover:underline">Resign</button>
+                            )}
+                            <button onClick={() => toggleBlock(member._id, member.isBlocked)} className={`text-xs font-semibold ${member.isBlocked ? 'text-emerald-600' : 'text-slate-500'} hover:underline`}>
+                              {member.isBlocked ? 'Unblock' : 'Block'}
+                            </button>
+                            <button onClick={handleDelete} className="text-xs font-semibold text-red-600 hover:underline">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

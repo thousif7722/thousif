@@ -11,43 +11,56 @@ const rateLimitHandler = (req, res) => {
   });
 };
 
-// ── General API: 100 requests per 1 minute (user can tap 100 times/min) ────────
+// ⚡ Bypass rate limiting completely for all Admin Panel & Staff operations
+const skipAdmin = (req) => {
+  const url = req.originalUrl || req.url || req.path || '';
+  if (url.includes('/admin') || url.includes('/api/admin')) return true;
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'staff')) return true;
+  return false;
+};
+
+// ── General API: 10,000 requests per minute (Admin completely exempt) ────────
 const apiRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 100,
+  windowMs: 60 * 1000,
+  max: 10000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipAdmin,
   handler: rateLimitHandler,
   keyGenerator: (req) => req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip,
 });
 
-// ── Auth endpoints: 10 attempts per 15 minutes ─────────────────────────────────
+// ── Auth endpoints: 1,000 attempts per 15 minutes (Admin exempt) ───────────────
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 1000,
+  skip: skipAdmin,
   handler: rateLimitHandler,
   keyGenerator: (req) => req.body?.phone || req.ip,
 });
 
-// ── OTP send: max 3 per phone per 15 minutes ──────────────────────────────────
+// ── OTP send: 100 per 15 minutes (Admin exempt) ────────────────────────────────
 const otpRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 3,
+  max: 100,
+  skip: skipAdmin,
   handler: rateLimitHandler,
   keyGenerator: (req) => `otp_req:${req.body?.phone || req.ip}`,
 });
 
-// ── Payment endpoints: 5 per minute ───────────────────────────────────────────
+// ── Payment endpoints: 1,000 per minute (Admin exempt) ─────────────────────────
 const paymentRateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: 1000,
+  skip: skipAdmin,
   handler: rateLimitHandler,
 });
 
-// ── Booking creation: 10 per minute per user ──────────────────────────────────
+// ── Booking creation: 1,000 per minute (Admin exempt) ─────────────────────────
 const bookingRateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 1000,
+  skip: skipAdmin,
   handler: rateLimitHandler,
   keyGenerator: (req) => req.headers.authorization?.split(' ')[1]?.slice(-12) || req.ip,
 });

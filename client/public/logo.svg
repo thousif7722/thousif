@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/255/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#grad)"/>
+  
+  <!-- Stylized Wrench/House Logo -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
+    <!-- House roof outline -->
+    <path d="M128 256 L256 128 L384 256" stroke-width="36"/>
+    <!-- House walls base -->
+    <path d="M168 256 V384 C168 392, 176 400, 184 400 H328 C336 400, 344 392, 344 384 V256"/>
+    <!-- Wrench head (Outer circle + jaw cutout) inside -->
+    <path d="M256 220 A 36 36 0 1 0 256 292 A 36 36 0 1 0 256 220 Z" fill="#FFFFFF" stroke="none"/>
+    <rect x="242" y="270" width="28" height="130" rx="6" fill="#FFFFFF" stroke="none"/>
+  </g>
+</svg>

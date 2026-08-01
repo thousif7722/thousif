@@ -12,13 +12,10 @@ const MONGOOSE_OPTIONS = {
   maxPoolSize: config.db.maxPoolSize,
   minPoolSize: config.db.minPoolSize,
   socketTimeoutMS: 45000,
-  serverSelectionTimeoutMS: IS_PROD ? 5000 : 3000,
+  serverSelectionTimeoutMS: 10000,
   heartbeatFrequencyMS: config.db.heartbeatFrequencyMS,
   retryWrites: true,
-  w: 'majority',
-  readPreference: 'primaryPreferred',
-  // Auto-compress data for network efficiency
-  compressors: ['zlib'],
+  directConnection: true,
 };
 
 let retryCount = 0;
@@ -92,11 +89,23 @@ async function ensureIndexes() {
       { background: true, name: 'booking_status_date' }
     );
 
+    // Provider: Pan-India State & City filtering index (28 states scale)
+    await Provider.collection.createIndex(
+      { state: 1, city: 1, approvalStatus: 1, isOnline: 1 },
+      { background: true, name: 'provider_state_city_online' }
+    );
+
+    // Booking: Pan-India State & City analytics index
+    await Booking.collection.createIndex(
+      { 'serviceAddress.state': 1, 'serviceAddress.city': 1, status: 1 },
+      { background: true, name: 'booking_state_city_status' }
+    );
+
     // Booking: customer and provider lookup indexes
     await Booking.collection.createIndex({ customerId: 1, createdAt: -1 }, { background: true });
     await Booking.collection.createIndex({ providerId: 1, status: 1 }, { background: true });
 
-    logger.info('✅ MongoDB geo indexes verified/created');
+    logger.info('✅ MongoDB Pan-India geo & state indexes verified/created');
   } catch (indexErr) {
     logger.warn('⚠️  Index creation warning (non-fatal):', indexErr.message);
   }

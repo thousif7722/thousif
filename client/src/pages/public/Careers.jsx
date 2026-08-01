@@ -38,7 +38,7 @@ export default function Careers() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-24 max-w-3xl mx-auto px-4">
+      <div className="py-6 max-w-3xl mx-auto px-4">
         
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary-100 text-primary-600 mb-4">

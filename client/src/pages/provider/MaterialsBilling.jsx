@@ -93,7 +93,7 @@ export default function MaterialsBilling() {
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       <Header />
-      <div className="pt-16 max-w-2xl mx-auto px-4 py-6">
+      <div className="max-w-2xl mx-auto px-4 py-6">
         <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-slate-500 text-sm mb-5">
           <ChevronLeft size={16} /> Back
         </button>

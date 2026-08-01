@@ -63,7 +63,7 @@ export default function AdminHiring() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-20 px-4 sm:px-6 w-full max-w-[1600px] mx-auto h-[calc(100vh-80px)] flex flex-col">
+      <div className="py-6 px-4 sm:px-6 w-full max-w-[1600px] mx-auto h-[calc(100vh-80px)] flex flex-col">
         
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shrink-0">

@@ -15,8 +15,9 @@ const BUCKET = process.env.AWS_S3_BUCKET || 'servicehub-dev';
 
 const s3Service = {
   async upload(key, body, contentType = 'application/octet-stream') {
-    if (process.env.NODE_ENV === 'development') {
-      logger.debug(`[DEV S3] Upload: ${key} (${contentType})`);
+    const hasRealAwsKeys = process.env.AWS_ACCESS_KEY_ID && !process.env.AWS_ACCESS_KEY_ID.includes('EXAMPLE');
+    if (!hasRealAwsKeys && process.env.NODE_ENV === 'development') {
+      logger.debug(`[DEV S3 Mock] Upload: ${key} (${contentType})`);
       return `https://dev-s3.servicehub.in/${key}`;
     }
     await s3Client.send(new PutObjectCommand({
@@ -26,7 +27,7 @@ const s3Service = {
       ContentType: contentType,
       ServerSideEncryption: 'AES256',
     }));
-    return `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+    return `https://${BUCKET}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${key}`;
   },
 
   async getSignedUrl(key, expiresIn = 3600) {

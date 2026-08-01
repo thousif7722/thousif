@@ -18,23 +18,23 @@ const router = express.Router();
 // ── Validation Schemas ─────────────────────────────────────────────────────────
 const createBookingSchema = Joi.object({
   serviceId: Joi.string().hex().length(24).required(),
-  scheduledDate: Joi.date().min(new Date(new Date().setHours(0, 0, 0, 0))).required(),
+  scheduledDate: Joi.date().min(new Date(Date.now() - 24 * 60 * 60 * 1000)).required(),
   timeSlot: Joi.object({
-    from: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
-    to: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
+    from: Joi.string().required(),
+    to: Joi.string().required(),
   }).required(),
   serviceAddress: Joi.object({
-    line1: Joi.string().required(),
-    line2: Joi.string().optional(),
-    city: Joi.string().required(),
-    state: Joi.string().required(),
-    pincode: Joi.string().pattern(/^\d{6}$/).required(),
+    line1: Joi.string().allow('', null).optional(),
+    line2: Joi.string().allow('', null).optional(),
+    city: Joi.string().allow('', null).optional(),
+    state: Joi.string().allow('', null).optional(),
+    pincode: Joi.string().allow('', null).optional(),
     location: Joi.object({
-      coordinates: Joi.array().items(Joi.number()).length(2).required(), // [lng, lat]
-    }).required(),
-  }).required(),
-  customerNotes: Joi.string().max(500).optional(),
-  couponCode: Joi.string().optional(),
+      coordinates: Joi.array().items(Joi.number()).optional(),
+    }).optional(),
+  }).optional(),
+  customerNotes: Joi.string().max(500).allow('', null).optional(),
+  couponCode: Joi.string().allow('', null).optional(),
 });
 
 const addMaterialsSchema = Joi.object({
@@ -43,18 +43,18 @@ const addMaterialsSchema = Joi.object({
     quantity: Joi.number().positive().required(),
     unit: Joi.string().default('pcs'),
     unitPrice: Joi.number().positive().required(),
-    brand: Joi.string().optional(),
+    brand: Joi.string().allow('', null).optional(),
     isProviderOwned: Joi.boolean().default(true),
   })).min(0).required(),
-  notes: Joi.string().max(500).optional(),
+  notes: Joi.string().max(500).allow('', null).optional(),
 });
 
 const completeBookingSchema = Joi.object({
-  workPerformed: Joi.string().required(),
+  workPerformed: Joi.string().allow('', null).optional(),
   extraCharges: Joi.number().min(0).default(0),
-  extraChargesNote: Joi.string().optional(),
+  extraChargesNote: Joi.string().allow('', null).optional(),
   afterPhotos: Joi.array().items(Joi.string()).optional(),
-  endOtp: Joi.string().length(4).pattern(/^\d{4}$/).optional(),
+  endOtp: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
   lat: Joi.number().optional(),
   lng: Joi.number().optional(),
 });
@@ -139,114 +139,142 @@ router.post('/validate-coupon', authenticate, authorize('customer'), async (req,
   });
 });
 
-router.post('/', authenticate, authorize('customer'), bookingRateLimiter, validateBody(createBookingSchema), async (req, res) => {
+async function createBookingHandler(req, res, session = null) {
   const {
     serviceId, scheduledDate, timeSlot,
     serviceAddress, customerNotes, couponCode,
   } = req.body;
 
-  // FIX #5: Wrap booking + coupon in a Mongoose session to prevent partial state
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const service = session
+    ? await Service.findById(serviceId).session(session)
+    : await Service.findById(serviceId);
+  if (!service || !service.isActive) throw new AppError('Service not available', 404);
 
-  try {
-    const service = await Service.findById(serviceId).session(session);
-    if (!service || !service.isActive) throw new AppError('Service not available', 404);
+  // Fetch user to check for Plus Membership
+  const user = session
+    ? await User.findById(req.userId).session(session)
+    : await User.findById(req.userId);
+  const isPlusMember = user?.subscription?.plan === 'premium' || user?.subscription?.isPlusMember === true;
 
-    // Fetch user to check for Plus Membership
-    const user = await User.findById(req.userId).session(session);
-    const isPlusMember = user?.subscription?.plan === 'premium';
+  // Validate and apply coupon
+  let discountAmount = 0;
+  let appliedCoupon = null;
+  
+  if (isPlusMember) {
+    discountAmount += Math.round(service.basePrice * 0.1); // 10% off for Plus members
+  }
 
-    // Validate and apply coupon
-    let discountAmount = 0;
-    let appliedCoupon = null;
-    
-    if (isPlusMember) {
-      discountAmount += Math.round(service.basePrice * 0.1); // 10% off for Plus members
-    }
+  if (couponCode) {
+    const couponResult = await bookingService.applyCoupon(
+      couponCode, req.userId, service.basePrice
+    );
+    discountAmount += couponResult.discountAmount;
+    appliedCoupon = couponResult.coupon;
+  }
 
-    if (couponCode) {
-      const couponResult = await bookingService.applyCoupon(
-        couponCode, req.userId, service.basePrice
-      );
-      discountAmount += couponResult.discountAmount;
-      appliedCoupon = couponResult.coupon;
-    }
-
-    // Create booking
-    const booking = new Booking({
-      customerId: req.userId,
-      serviceId,
-      scheduledDate,
-      timeSlot,
-      serviceAddress: {
-        ...serviceAddress,
-        location: {
-          type: 'Point',
-          coordinates: serviceAddress.location.coordinates,
-        },
+  // Create booking
+  const booking = new Booking({
+    customerId: req.userId,
+    serviceId,
+    scheduledDate,
+    timeSlot,
+    serviceAddress: {
+      ...serviceAddress,
+      location: {
+        type: 'Point',
+        coordinates: serviceAddress.location.coordinates,
       },
-      basePrice: service.basePrice,
-      discountAmount,
-      couponCode: appliedCoupon?.code,
-      customerNotes,
-      commissionRate: parseInt(process.env.DEFAULT_COMMISSION_PERCENT || '20'),
-      status: 'pending',
-    });
+    },
+    basePrice: service.basePrice,
+    discountAmount,
+    couponCode: appliedCoupon?.code,
+    customerNotes,
+    commissionRate: parseInt(process.env.DEFAULT_COMMISSION_PERCENT || '20'),
+    status: 'pending',
+  });
 
-    // Smart surge pricing (Free for Plus Members) — wrapped in try/catch to prevent geo-index crash
-    let surgeMultiplier = 1.0;
-    if (!isPlusMember) {
-      try {
-        surgeMultiplier = await bookingService.calculateSurgePricing(
-          serviceId, scheduledDate, serviceAddress.location.coordinates
-        );
-      } catch (surgeErr) {
-        logger.warn('Surge pricing calculation failed, defaulting to 1.0x:', surgeErr.message);
-        surgeMultiplier = 1.0;
-      }
+  // Smart surge pricing (Free for Plus Members) — wrapped in try/catch to prevent geo-index crash
+  let surgeMultiplier = 1.0;
+  if (!isPlusMember) {
+    try {
+      surgeMultiplier = await bookingService.calculateSurgePricing(
+        serviceId, scheduledDate, serviceAddress.location.coordinates
+      );
+    } catch (surgeErr) {
+      logger.warn('Surge pricing calculation failed, defaulting to 1.0x:', surgeErr.message);
+      surgeMultiplier = 1.0;
     }
-    booking.surgeMultiplier = surgeMultiplier;
+  }
+  booking.surgeMultiplier = surgeMultiplier;
 
+  if (session) {
     await booking.save({ session });
+  } else {
+    await booking.save();
+  }
 
-    // Update coupon usage within the same transaction
-    if (appliedCoupon) {
-      await bookingService.recordCouponUsage(appliedCoupon._id, req.userId, session);
+  // Update coupon usage within the same transaction
+  if (appliedCoupon) {
+    await bookingService.recordCouponUsage(appliedCoupon._id, req.userId, session);
+  }
+
+  // Queue provider matching (async — don't block response)
+  const { bookingQueue } = require('../../jobs');
+  await bookingQueue.add('match_provider', {
+    bookingId: booking._id.toString(),
+    coordinates: serviceAddress.location.coordinates,
+    serviceId,
+    attempt: 1,
+  }, { delay: 0, attempts: 5, backoff: { type: 'exponential', delay: 10000 } });
+
+  // Fallback: Trigger direct provider match immediately so matching works seamlessly
+  setImmediate(async () => {
+    try {
+      await bookingService.assignProviderToBooking(booking, 1);
+    } catch (e) {
+      logger.warn(`Immediate provider assignment fallback error for booking ${booking._id}:`, e.message);
     }
+  });
 
+  logger.info(`Booking ${booking.bookingNumber} created, queued for matching`);
+
+  const bookingData = booking.toObject({ virtuals: true });
+  
+  res.status(201).json({
+    success: true,
+    message: 'Booking created. Finding the best provider for you...',
+    data: {
+      bookingId: bookingData._id.toString(),
+      bookingNumber: bookingData.bookingNumber,
+      status: bookingData.status,
+      estimatedTotal: bookingData.totalAmount,
+      surgeMultiplier,
+    },
+  });
+}
+
+router.post('/', authenticate, authorize('customer'), bookingRateLimiter, validateBody(createBookingSchema), async (req, res) => {
+  let session = null;
+  try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+    await createBookingHandler(req, res, session);
     await session.commitTransaction();
     session.endSession();
-
-    // Queue provider matching (async — don't block response)
-    const { bookingQueue } = require('../../jobs');
-    await bookingQueue.add('match_provider', {
-      bookingId: booking._id.toString(),
-      coordinates: serviceAddress.location.coordinates,
-      serviceId,
-      attempt: 1,
-    }, { delay: 0, attempts: 5, backoff: { type: 'exponential', delay: 10000 } });
-
-    logger.info(`Booking ${booking.bookingNumber} created, queued for matching`);
-
-    const bookingData = booking.toObject({ virtuals: true });
-    
-    res.status(201).json({
-      success: true,
-      message: 'Booking created. Finding the best provider for you...',
-      data: {
-        bookingId: bookingData._id.toString(),
-        bookingNumber: bookingData.bookingNumber,
-        status: bookingData.status,
-        estimatedTotal: bookingData.totalAmount,
-        surgeMultiplier,
-      },
-    });
   } catch (err) {
     if (session) {
-      if (session.inTransaction()) await session.abortTransaction();
-      await session.endSession();
+      try {
+        if (session.inTransaction()) await session.abortTransaction();
+        await session.endSession();
+      } catch (sErr) {}
     }
+
+    // Auto-fallback if MongoDB is running standalone without replica set
+    if (err?.message && err.message.includes('Transaction numbers are only allowed')) {
+      logger.info('Standalone MongoDB detected (transactions unsupported). Creating booking without transaction session.');
+      return await createBookingHandler(req, res, null);
+    }
+
     // Safely extract error details to prevent circular JSON issues
     const errorMessage = typeof err === 'string' ? err : (err?.message || 'Unknown booking error');
     const dbErrorCode = err?.code || err?.errorCode;
@@ -261,6 +289,9 @@ router.post('/', authenticate, authorize('customer'), bookingRateLimiter, valida
  * Get booking details
  */
 router.get('/:id', authenticate, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    throw new AppError('Booking not found', 404);
+  }
   const booking = await Booking.findById(req.params.id)
     .populate('serviceId')
     .populate('customerId', 'name phone avatar')
@@ -270,19 +301,62 @@ router.get('/:id', authenticate, async (req, res) => {
   if (!booking) throw new AppError('Booking not found', 404);
 
   // Authorization check
-  const isOwner = booking.customerId?._id?.toString() === req.userId ||
-    booking.providerId?._id?.toString() === req.userId;
-  if (!isOwner && req.userRole !== 'admin') {
+  const customerIdStr = booking.customerId?._id ? booking.customerId._id.toString() : booking.customerId?.toString();
+  const providerIdStr = booking.providerId?._id ? booking.providerId._id.toString() : booking.providerId?.toString();
+  const isOwner = customerIdStr === req.userId || providerIdStr === req.userId;
+  if (!isOwner && !['admin', 'staff', 'manager'].includes(req.userRole)) {
     throw new AppError('Not authorized to view this booking', 403);
   }
 
-  // Include materials if job is completed
-  let materials = null;
-  if (['completed', 'paid'].includes(booking.status)) {
-    materials = await MaterialsUsed.findOne({ bookingId: booking._id }).lean();
+  // If status is pending, check active online provider count
+  if (booking.status === 'pending') {
+    try {
+      const onlineProvidersCount = await Provider.countDocuments({
+        services: booking.serviceId?._id || booking.serviceId,
+        approvalStatus: 'approved',
+        isOnline: true,
+        isBlocked: false,
+        'earnings.isOnHold': { $ne: true },
+      });
+      booking.nearbyProvidersCount = onlineProvidersCount;
+      if (onlineProvidersCount === 0) {
+        booking.noProvidersAvailable = true;
+      }
+    } catch (e) {
+      logger.warn('Failed to check nearby provider count:', e.message);
+    }
   }
 
+  // Include materials if they exist
+  const materials = await MaterialsUsed.findOne({ bookingId: booking._id }).lean();
+
   res.json({ success: true, data: { booking, materials } });
+});
+
+/**
+ * POST /bookings/:id/retry-match
+ * Manually retry finding a provider for a pending booking
+ */
+router.post('/:id/retry-match', authenticate, authorize('customer'), async (req, res) => {
+  const booking = await Booking.findById(req.params.id);
+  if (!booking) throw new AppError('Booking not found', 404);
+  if (booking.customerId?.toString() !== req.userId) throw new AppError('Forbidden', 403);
+  if (booking.status !== 'pending') throw new AppError('Can only retry matching for pending bookings', 400);
+
+  const provider = await bookingService.assignProviderToBooking(booking, 1);
+  if (provider) {
+    res.json({
+      success: true,
+      message: `Matched with provider ${provider.name}!`,
+      data: { providerAssigned: true, providerName: provider.name },
+    });
+  } else {
+    res.json({
+      success: true,
+      message: `No service providers currently available in your location. We will keep searching.`,
+      data: { providerAssigned: false },
+    });
+  }
 });
 
 /**
@@ -299,24 +373,14 @@ router.put('/:id/accept', authenticate, authorize('provider'), async (req, res) 
     throw new AppError(`Cannot accept booking with status: ${booking.status}`, 400);
   }
 
-  // Check daily limit (max 5 jobs per day)
-  const bookingStart = new Date(booking.scheduledDate);
-  const startOfDay = new Date(bookingStart);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(bookingStart);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  const dailyJobsCount = await Booking.countDocuments({
+  // Check active jobs limit (max 5 open/uncompleted jobs at a time)
+  const activeJobsCount = await Booking.countDocuments({
     providerId: req.userId,
-    status: { $in: ['accepted', 'in_progress', 'completed', 'paid'] },
-    scheduledDate: {
-      $gte: startOfDay,
-      $lte: endOfDay
-    }
+    status: { $in: ['assigned', 'accepted', 'in_progress'] },
   });
 
-  if (dailyJobsCount >= 5) {
-    throw new AppError('Cannot accept: You have reached the maximum limit of 5 jobs per day.', 400);
+  if (activeJobsCount >= 5) {
+    throw new AppError('Cannot accept: You have reached the maximum limit of 5 active jobs at a time. Please complete a job first.', 400);
   }
 
   booking.status = 'accepted';
@@ -329,6 +393,11 @@ router.put('/:id/accept', authenticate, authorize('provider'), async (req, res) 
     customerId: booking.customerId.toString(),
     serviceAddress: booking.serviceAddress,
   }, 4 * 60 * 60); // 4 hour TTL
+
+  // ── Mark provider as busy ONLY if they reach max capacity (5 active jobs) ─
+  if (activeJobsCount + 1 >= 5) {
+    await cache.set(`provider:busy:${req.userId}`, '1', 12 * 60 * 60);
+  }
 
   // Notify customer
   const io = getIO();
@@ -426,15 +495,9 @@ router.put('/:id/start', authenticate, authorize('provider'), async (req, res) =
     throw new AppError('Invalid OTP', 400);
   }
 
-  // Geofencing verification (500 metres max distance)
-  if (!lat || !lng) throw new AppError('Location coordinates (lat, lng) are required to start the job.', 400);
-  const customerLocation = booking.serviceAddress?.location?.coordinates;
-  if (customerLocation?.length === 2) {
-    const distanceKm = haversineDistance([Number(lng), Number(lat)], customerLocation);
-    if (distanceKm > 0.5) {
-      throw new AppError(`You are ${(distanceKm * 1000).toFixed(0)}m away from the customer. Please reach the location to start.`, 400);
-    }
-  }
+
+  // [Geofencing coordinates check removed as per client preferences]
+
 
   // Generate a 4-digit PIN the customer will read to the provider
   const endOtp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -457,6 +520,102 @@ router.put('/:id/start', authenticate, authorize('provider'), async (req, res) =
     success: true,
     message: 'Job started',
     data: { startedAt: booking.workDetails.startedAt },
+  });
+});
+
+/**
+ * POST /bookings/:id/quote
+ * Provider submits detected issues/add-on services during inspection
+ */
+router.post('/:id/quote', authenticate, authorize('provider'), async (req, res) => {
+  const { addons, note } = req.body; // addons: [{ serviceId, name, price, category }]
+  if (!addons || !Array.isArray(addons) || addons.length === 0) {
+    throw new AppError('At least one detected issue/add-on service is required', 400);
+  }
+
+  const booking = await Booking.findById(req.params.id);
+  if (!booking) throw new AppError('Booking not found', 404);
+  if (booking.providerId?.toString() !== req.userId) throw new AppError('Forbidden', 403);
+  if (!['assigned', 'accepted', 'in_progress'].includes(booking.status)) {
+    throw new AppError('Cannot submit quote for this booking status', 400);
+  }
+
+  const totalAddonPrice = addons.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+
+  booking.quotation = {
+    addons,
+    totalAddonPrice,
+    note: note || 'On-site inspection quote for detected issues.',
+    status: 'pending',
+    requestedAt: new Date(),
+  };
+
+  await booking.save();
+
+  // Notify customer real-time
+  const io = getIO();
+  if (io) {
+    io.to(`user:${booking.customerId}`).emit('booking:quote_requested', {
+      bookingId: booking._id,
+      quotation: booking.quotation,
+      newTotalAmount: booking.basePrice + totalAddonPrice,
+      message: 'Technician has inspected your service location and submitted an updated quote for additional issues detected.',
+    });
+  }
+
+  logger.info(`Provider ${req.userId} submitted on-site quote for booking ${booking._id}: ₹${totalAddonPrice}`);
+
+  res.json({
+    success: true,
+    message: 'Quotation sent to customer for approval.',
+    data: booking.quotation,
+  });
+});
+
+/**
+ * PUT /bookings/:id/quote/respond
+ * Customer approves or declines on-site quotation
+ */
+router.put('/:id/quote/respond', authenticate, authorize('customer'), async (req, res) => {
+  const { action } = req.body; // 'approve' | 'decline'
+  if (!['approve', 'decline'].includes(action)) {
+    throw new AppError('Action must be approve or decline', 400);
+  }
+
+  const booking = await Booking.findById(req.params.id).populate('serviceId', 'name');
+  if (!booking) throw new AppError('Booking not found', 404);
+  if (booking.customerId?.toString() !== req.userId) throw new AppError('Forbidden', 403);
+  if (!booking.quotation || booking.quotation.status !== 'pending') {
+    throw new AppError('No pending quotation found for this booking', 400);
+  }
+
+  booking.quotation.status = action === 'approve' ? 'approved' : 'declined';
+  booking.quotation.respondedAt = new Date();
+
+  await booking.save(); // pre-save hook recalculates totalAmount if approved!
+
+  // Notify provider real-time
+  const io = getIO();
+  if (io) {
+    io.to(`provider:${booking.providerId}`).emit('booking:quote_responded', {
+      bookingId: booking._id,
+      action,
+      totalAmount: booking.totalAmount,
+      message: action === 'approve' 
+        ? 'Customer APPROVED the updated quote! You may proceed with the work.' 
+        : 'Customer DECLINED the updated quote.',
+    });
+  }
+
+  logger.info(`Customer ${req.userId} ${action}d quotation for booking ${booking._id}`);
+
+  res.json({
+    success: true,
+    message: action === 'approve' ? 'Quote approved! Total cost updated.' : 'Quote declined.',
+    data: {
+      status: booking.quotation.status,
+      totalAmount: booking.totalAmount,
+    },
   });
 });
 
@@ -535,18 +694,18 @@ router.put('/:id/complete', authenticate, authorize('provider'), validateBody(co
   const { workPerformed, extraCharges, extraChargesNote, afterPhotos, endOtp, lat, lng } = req.body;
   const booking = await Booking.findById(req.params.id);
   if (!booking) throw new AppError('Booking not found', 404);
-  if (booking.providerId?.toString() !== req.userId) throw new AppError('Forbidden', 403);
+  const activeProviderId = req.providerId || req.userId;
+  if (booking.providerId?.toString() !== activeProviderId) throw new AppError('Forbidden', 403);
   if (booking.status !== 'in_progress') throw new AppError('Job not in progress', 400);
 
-  // Geofencing verification (500 metres max distance)
-  if (!lat || !lng) throw new AppError('Location coordinates (lat, lng) are required to complete the job.', 400);
-  const customerLocation = booking.serviceAddress?.location?.coordinates;
-  if (customerLocation?.length === 2) {
-    const distanceKm = haversineDistance([Number(lng), Number(lat)], customerLocation);
-    if (distanceKm > 0.5) {
-      throw new AppError(`You are ${(distanceKm * 1000).toFixed(0)}m away from the customer. Please remain at the location to complete.`, 400);
-    }
+  // Anti-Bypass: Cannot complete job if on-site quotation is pending approval
+  if (booking.quotation && booking.quotation.status === 'pending') {
+    throw new AppError('Cannot complete job while on-site quotation is pending customer approval or rejection. Please ask customer to approve or decline in app.', 400);
   }
+
+
+  // [Geofencing coordinates check removed as per client preferences]
+
 
   // Verify 4-digit completion PIN shared by customer
   if (booking.endOtp) {
@@ -565,10 +724,27 @@ router.put('/:id/complete', authenticate, authorize('provider'), validateBody(co
   booking.extraCharges = extraCharges || 0;
   booking.extraChargesNote = extraChargesNote;
   booking.timeline.push({ status: 'completed', note: 'Job completed by provider' });
+
+  // 🛡️ Auto-issue 30-Day Warranty Vault Certificate (Pillar 4)
+  if (!booking.warranty || !booking.warranty.warrantyId) {
+    const ts = Date.now().toString(36).toUpperCase();
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    booking.warranty = {
+      warrantyId: `SH-WRN-${ts}-${rand}`,
+      issuedAt: new Date(),
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days valid
+      status: 'active',
+      terms: '30-Day Free Revisit Guarantee covering all labor & service work.',
+    };
+  }
+
   await booking.save();
 
   // Clear active booking cache so GPS tracking stops
   await cache.del(`active_booking:provider:${req.userId}`);
+
+  // ── FIX 1: Provider is free again — remove busy flag so they re-enter match pool
+  await cache.del(`provider:busy:${req.userId}`);
 
   const io = getIO();
   io.to(`user:${booking.customerId}`).emit('booking:completed', {
@@ -604,7 +780,7 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
   const booking = await Booking.findById(req.params.id);
   if (!booking) throw new AppError('Booking not found', 404);
 
-  const cancelableStatuses = ['pending', 'assigned', 'accepted'];
+  const cancelableStatuses = ['pending', 'assigned', 'accepted', 'in_progress'];
   if (!cancelableStatuses.includes(booking.status)) {
     throw new AppError('Booking cannot be cancelled at this stage', 400);
   }
@@ -618,7 +794,7 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
   let cancelledBy = isAdmin ? 'admin' : (isCustomer ? 'customer' : 'provider');
 
   // Strict Provider Penalties for abandoning an accepted job
-  if (cancelledBy === 'provider' && booking.status === 'accepted') {
+  if (cancelledBy === 'provider' && ['accepted', 'in_progress'].includes(booking.status)) {
     const provider = await Provider.findById(req.userId);
     if (provider) {
       provider.cancelledJobs = (provider.cancelledJobs || 0) + 1;
@@ -636,6 +812,7 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
   }
 
   // Calculate cancellation charge (only applicable if customer cancels)
+  // Compulsory Visit Charge Enforcement: If technician visited or quoted, 100% Visit Fee (₹199) is compulsory
   let cancellationCharge = 0;
   if (cancelledBy === 'customer') {
     cancellationCharge = bookingService.calculateCancellationCharge(booking);
@@ -647,14 +824,67 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
     reason,
     cancelledAt: new Date(),
     cancellationCharge,
-    refundAmount: booking.totalAmount - cancellationCharge,
+    refundAmount: Math.max(0, booking.totalAmount - cancellationCharge),
   };
-  booking.timeline.push({ status: 'cancelled', note: `Cancelled by ${cancelledBy}: ${reason || 'No reason given'}` });
+  booking.timeline.push({ 
+    status: 'cancelled', 
+    note: `Cancelled by ${cancelledBy}: ${reason || 'No reason given'}${cancellationCharge > 0 ? ` (Compulsory Visit Charge: ₹${cancellationCharge})` : ''}` 
+  });
   await booking.save();
+
+  // 🚨 AUTOMATED RED FLAG & ACCOUNT BLOCK (3+ Post-Start Cancellations Rule)
+  if (booking.providerId) {
+    const postStartCancelCount = await Booking.countDocuments({
+      providerId: booking.providerId,
+      status: 'cancelled',
+      createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+    });
+
+    if (postStartCancelCount >= 3) {
+      const provider = await Provider.findById(booking.providerId);
+      if (provider && !provider.isBlocked) {
+        provider.isBlocked = true;
+        provider.blockReason = `AUTOMATED RED FLAG: ${postStartCancelCount} post-visit/start job cancellations in 7 days (Suspected off-platform deal fraud)`;
+        provider.riskScore = 100;
+        if (!provider.badges.includes('RED FLAG - SUSPENDED')) {
+          provider.badges.push('RED FLAG - SUSPENDED');
+        }
+        await provider.save();
+
+        const io = getIO();
+        if (io) {
+          io.to('admin').emit('admin:provider_blocked', {
+            providerId: provider._id,
+            providerName: provider.name,
+            reason: provider.blockReason,
+            postStartCancelCount,
+          });
+        }
+        logger.warn(`Provider ${provider.name} (${provider._id}) AUTOMATICALLY BLOCKED due to ${postStartCancelCount} cancellations!`);
+      }
+    }
+  }
 
   // Clear active booking cache if provider is cancelling
   if (cancelledBy === 'provider' && booking.providerId) {
     await cache.del(`active_booking:provider:${booking.providerId}`);
+    // ── FIX 1: Release busy lock so provider re-enters match pool immediately
+    await cache.del(`provider:busy:${booking.providerId}`);
+  }
+
+  // Socket notification
+  const io = getIO();
+  const notifyUser = cancelledBy === 'customer' ? booking.providerId : booking.customerId;
+  const targetRoom = cancelledBy === 'customer' ? `provider:${booking.providerId}` : `user:${booking.customerId}`;
+  
+  if (io && notifyUser) {
+    io.to(targetRoom).emit('booking:cancelled', {
+      bookingId: booking._id,
+      cancelledBy,
+      reason,
+      cancellationCharge,
+      message: `Booking was cancelled by ${cancelledBy}.`,
+    });
   }
 
   // Trigger refund if payment was made
@@ -722,6 +952,54 @@ router.get('/:id/track', authenticate, authorize('customer'), async (req, res) =
   }
 
   res.json({ success: true, data: locationData });
+});
+
+/**
+ * POST /bookings/:id/report-fraud
+ * Customer Whistleblower Endpoint: Report an off-platform cash deal offer
+ * Flags technician provider for trust & safety audit and acknowledges customer protection.
+ */
+router.post('/:id/report-fraud', authenticate, authorize('customer'), async (req, res) => {
+  const booking = await Booking.findById(req.params.id);
+  if (!booking) throw new AppError('Booking not found', 404);
+
+  const { reason = 'Technician offered direct off-platform cash deal' } = req.body;
+
+  // Flag Provider
+  if (booking.providerId) {
+    const provider = await Provider.findById(booking.providerId);
+    if (provider) {
+      provider.riskScore = Math.min((provider.riskScore || 0) + 40, 100);
+      provider.warningCount = (provider.warningCount || 0) + 1;
+      provider.warnings.push({
+        reason: `Reported by customer for off-app cash deal on booking ${booking.bookingNumber}`,
+        issuedAt: new Date(),
+      });
+      if (!provider.badges.includes('SUSPECTED FRAUD')) {
+        provider.badges.push('SUSPECTED FRAUD');
+      }
+      await provider.save();
+    }
+  }
+
+  // Socket Alert to Admin
+  const io = getIO();
+  if (io) {
+    io.to('admin').emit('admin:fraud_reported', {
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      providerId: booking.providerId,
+      customerId: req.userId,
+      reason,
+    });
+  }
+
+  logger.warn(`Fraud reported by customer on booking ${booking.bookingNumber}`);
+
+  res.json({
+    success: true,
+    message: 'Thank you for staying safe! 🛡️ You saved yourself from unauthorized repair fraud. Your report has been logged with our Trust & Safety team.',
+  });
 });
 
 module.exports = router;

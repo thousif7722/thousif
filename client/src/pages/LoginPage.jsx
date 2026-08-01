@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Phone, ArrowRight, RefreshCw, ChevronLeft } from 'lucide-react';
 import { sendOTP, verifyOTP, resetOtp, selectAuthLoading, loginWithGoogle } from '@/store/slices/authSlice';
+import { selectPublicSettings } from '@/store/slices/serviceSlice';
 import toast from 'react-hot-toast';
 
 const SERVICES_PREVIEW = ['AC Repair', 'Home Cleaning', 'Plumbing', 'Electrical', 'Pest Control', 'Painting'];
@@ -11,6 +13,10 @@ export default function LoginPage() {
   const dispatch = useDispatch();
   const loading = useSelector(selectAuthLoading);
   const { otpSent, otpPhone } = useSelector(s => s.auth);
+  const settings = useSelector(selectPublicSettings);
+
+  const siteName = settings?.siteName || 'ServiceHub';
+  const logoUrl = settings?.logoUrl;
 
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -87,8 +93,12 @@ export default function LoginPage() {
       {/* Left panel — branding */}
       <div className="hidden lg:flex flex-col justify-between w-1/2 p-16 text-white">
         <div>
-          <div className="text-3xl font-bold tracking-tight mb-2">⚡ ServiceHub</div>
-          <p className="text-primary-200 text-sm">Professional Home Services</p>
+          {logoUrl && logoUrl !== '/logo.png' ? (
+            <img src={logoUrl} alt={siteName} className="h-10 w-auto object-contain mb-2 max-w-[220px]" />
+          ) : (
+            <div className="text-3xl font-bold tracking-tight mb-2">⚡ {siteName}</div>
+          )}
+          <p className="text-primary-200 text-sm">{settings?.tagline || 'Professional Home Services'}</p>
         </div>
         <div>
           <h1 className="text-5xl font-bold leading-tight mb-6">
@@ -114,15 +124,19 @@ export default function LoginPage() {
       </div>
 
       {/* Right panel — auth form */}
-      <div className="flex-1 flex items-center justify-center p-6">
+      <div className="flex-1 flex items-center justify-center p-3 xs:p-6 sm:p-8">
         <motion.div
-          className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8"
+          className="w-full max-w-md bg-white rounded-2xl xs:rounded-3xl shadow-2xl p-4 xs:p-7 sm:p-8"
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
           <div className="mb-8 text-center lg:hidden">
-            <div className="text-2xl font-bold text-primary-700">⚡ ServiceHub</div>
+            {logoUrl && logoUrl !== '/logo.png' ? (
+              <img src={logoUrl} alt={siteName} className="h-9 w-auto object-contain mx-auto" />
+            ) : (
+              <div className="text-2xl font-bold text-primary-700">⚡ {siteName}</div>
+            )}
           </div>
 
           <div id="firebase-recaptcha" />
@@ -134,13 +148,17 @@ export default function LoginPage() {
                 <p className="text-slate-500 text-sm mb-8">Enter your phone number to continue</p>
 
                 {/* Role selector */}
-                <div className="flex bg-slate-100 rounded-xl p-1 mb-6 gap-1">
-                  {[{ id: 'customer', label: '👤 Customer' }, { id: 'provider', label: '🔧 Provider' }].map(r => (
+                <div className="flex bg-slate-100/90 border border-slate-200 rounded-2xl p-1.5 mb-6 gap-1.5 shadow-inner">
+                  {[
+                    { id: 'customer', label: '👤 Customer', activeClass: 'bg-blue-600 text-white shadow-md shadow-blue-500/30' },
+                    { id: 'provider', label: '🔧 Provider', activeClass: 'bg-emerald-600 text-white shadow-md shadow-emerald-500/30' }
+                  ].map(r => (
                     <button
                       key={r.id}
+                      type="button"
                       onClick={() => setRole(r.id)}
-                      className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                        role === r.id ? 'bg-white shadow text-primary-700' : 'text-slate-500 hover:text-slate-700'
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                        role === r.id ? `${r.activeClass} scale-[1.02]` : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                       }`}
                     >
                       {r.label}
@@ -210,8 +228,8 @@ export default function LoginPage() {
 
                 <p className="text-center text-xs text-slate-400 mt-6">
                   By continuing, you agree to our{' '}
-                  <a href="#" className="text-primary-600 underline">Terms</a> &{' '}
-                  <a href="#" className="text-primary-600 underline">Privacy Policy</a>
+                  <Link to="/terms" className="text-primary-600 underline hover:text-primary-800">Terms</Link> &{' '}
+                  <Link to="/privacy" className="text-primary-600 underline hover:text-primary-800">Privacy Policy</Link>
                 </p>
               </motion.div>
             ) : (
@@ -224,7 +242,7 @@ export default function LoginPage() {
                   Sent to <span className="font-semibold text-slate-700">+91 {otpPhone}</span>. Please enter the 6-digit code below.
                 </p>
 
-                <div className="flex gap-3 justify-center mb-8">
+                <div className="flex gap-1.5 xs:gap-2 sm:gap-3 justify-center mb-8">
                   {otp.map((digit, i) => (
                     <input
                       key={i}
@@ -235,7 +253,7 @@ export default function LoginPage() {
                       value={digit}
                       onChange={e => handleOTPChange(i, e.target.value)}
                       onKeyDown={e => handleOTPKeyDown(i, e)}
-                      className={`w-12 h-14 text-center text-xl font-bold border-2 rounded-xl outline-none transition-all
+                      className={`w-[13.5%] xs:w-11 sm:w-12 h-11 xs:h-13 sm:h-14 text-center text-lg xs:text-xl font-bold border-2 rounded-xl outline-none transition-all
                         ${digit ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-slate-200 bg-slate-50'}
                         focus:border-primary-500`}
                       autoFocus={i === 0}

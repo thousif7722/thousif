@@ -1,12 +1,13 @@
 'use strict';
 const express = require('express');
 const multer = require('multer');
-const { Provider, Booking } = require('../../models');
+const { Provider, Booking, Payout, WalletLedger, Notification } = require('../../models');
 const { authenticate, authorize } = require('../auth/auth.routes');
 const { AppError } = require('../../utils/errors');
 const { s3Service } = require('../../services/s3.service');
 const { cache } = require('../../config/redis');
 const { getLeastBusyStaff } = require('../../utils/assignment');
+const { getIO } = require('../../socket');
 const router = express.Router();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -101,16 +102,50 @@ router.put('/me/location', authenticate, authorize('provider'), async (req, res)
     .select('currentLocation serviceRadius isOnline');
   if (!provider) throw new AppError('Provider not found', 404);
 
+  if (provider.isOnline) {
+    const { matchPendingBookingsForOnlineProvider } = require('../booking/booking.service');
+    matchPendingBookingsForOnlineProvider(req.userId).catch(() => {});
+  }
+
   res.json({ success: true, data: provider });
 });
 
 // ── Availability Toggle ────────────────────────────────────────────────────────
 router.put('/me/availability', authenticate, authorize('provider'), async (req, res) => {
   const { isOnline, isAvailable } = req.body;
+  
+  if (isOnline) {
+    const provider = await Provider.findById(req.userId).select('earnings isBlocked approvalStatus').lean();
+    if (!provider) throw new AppError('Provider not found', 404);
+    if (provider.isBlocked) {
+      throw new AppError('Your account is currently suspended by Admin. You cannot go online.', 400);
+    }
+    if (provider.approvalStatus !== 'approved') {
+      throw new AppError('Your account KYC is not approved yet. Please wait for staff verification.', 400);
+    }
+
+    const pendingCommission = Number(provider?.earnings?.pendingCommission || 0);
+    const walletBal = Number(provider?.earnings?.walletBalance || 0);
+    const isOnHold = !!provider?.earnings?.isOnHold;
+
+    if (pendingCommission >= 500 || walletBal <= -500 || isOnHold) {
+      throw new AppError(
+        `Cannot go online. Unpaid platform commission is ₹${pendingCommission || Math.abs(walletBal)} (wallet balance -₹${Math.abs(walletBal)}). Please add money to clear minus balance to resume accepting jobs.`,
+        400
+      );
+    }
+  }
+
   const update = {};
   if (isOnline !== undefined) update.isOnline = isOnline;
   if (isAvailable !== undefined) update.isAvailable = isAvailable;
   await Provider.findByIdAndUpdate(req.userId, update);
+
+  if (isOnline) {
+    const { matchPendingBookingsForOnlineProvider } = require('../booking/booking.service');
+    matchPendingBookingsForOnlineProvider(req.userId).catch(() => {});
+  }
+
   res.json({ success: true, message: `Status updated`, data: update });
 });
 
@@ -199,9 +234,80 @@ router.get('/:id', async (req, res) => {
     .select('name avatar rating ratingCount completedJobs tier services specializations experience city')
     .populate('services', 'name category icon')
     .lean();
-  if (!provider) throw new AppError('Provider not found', 404);
-  await cache.set(`provider:public:${req.params.id}`, provider, 300);
   res.json({ success: true, data: provider });
+});
+
+// ── Provider Withdrawal Request (Method A) ──────────────────────────────────
+router.post('/me/withdraw', authenticate, authorize('provider'), async (req, res) => {
+  const { amount } = req.body;
+  const numAmt = Number(amount);
+  if (!numAmt || numAmt < 100) throw new AppError('Minimum withdrawal amount is ₹100', 400);
+
+  const provider = await Provider.findById(req.userId);
+  if (!provider) throw new AppError('Provider not found', 404);
+
+  if (provider.isBlocked || provider.earnings?.isOnHold) {
+    throw new AppError('Withdrawals are temporarily disabled for your account due to an active administrative hold.', 400);
+  }
+
+  if (!provider.earnings?.bankAccount?.verified) {
+    throw new AppError('Bank account is not verified yet. Please update and verify your bank details before requesting payouts.', 400);
+  }
+
+  const currentWallet = Number(provider.earnings?.walletBalance || 0);
+  if (currentWallet < numAmt) {
+    throw new AppError(`Insufficient wallet balance. Available for withdrawal: ₹${Math.max(0, currentWallet)}`, 400);
+  }
+
+  // Deduct from wallet and track pending payout
+  provider.earnings.walletBalance = currentWallet - numAmt;
+  await provider.save();
+
+  // Create Payout Record
+  const payout = await Payout.create({
+    providerId: provider._id,
+    amount: numAmt,
+    status: 'pending',
+    bankDetails: provider.bankDetails || {},
+    notes: `Withdrawal request of ₹${numAmt} submitted on ${new Date().toLocaleDateString()}`,
+  });
+
+  // Audit Ledger Entry
+  await WalletLedger.create([{
+    ownerId: provider._id,
+    ownerType: 'provider',
+    type: 'debit',
+    account: 'wallet',
+    amount: numAmt,
+    balance: provider.earnings.walletBalance,
+    description: `Payout withdrawal request of ₹${numAmt} submitted (Payout ID: ${payout._id})`,
+  }]);
+
+  // Real-time Notification to Provider
+  await Notification.create({
+    userId: provider._id,
+    title: '⏳ Payout Request Submitted',
+    body: `Withdrawal request for ₹${numAmt} is under review by Admin. Processing time: 1-2 business days.`,
+    type: 'payout_update',
+    referenceId: payout._id,
+  }).catch(() => {});
+
+  const io = getIO();
+  io.to(`provider:${provider._id}`).emit('notification:push', {
+    title: '⏳ Payout Request Submitted',
+    body: `Withdrawal request for ₹${numAmt} is submitted. Available wallet balance: ₹${provider.earnings.walletBalance}`,
+    walletBalance: provider.earnings.walletBalance,
+  });
+
+  res.json({
+    success: true,
+    message: `Withdrawal request for ₹${numAmt} submitted successfully. Admin approval in 1-2 business days.`,
+    data: {
+      payoutId: payout._id,
+      amount: numAmt,
+      remainingWalletBalance: provider.earnings.walletBalance,
+    },
+  });
 });
 
 module.exports = router;

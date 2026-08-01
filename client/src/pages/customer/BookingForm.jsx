@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -15,10 +15,30 @@ import Header from '@/components/common/Header';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 
-const TIME_SLOTS = [
-  '07:00–09:00', '09:00–11:00', '11:00–13:00',
-  '13:00–15:00', '15:00–17:00', '17:00–19:00',
+const ALL_TIME_SLOTS = [
+  { label: '07:00–09:00', from: 7 },
+  { label: '09:00–11:00', from: 9 },
+  { label: '11:00–13:00', from: 11 },
+  { label: '13:00–15:00', from: 13 },
+  { label: '15:00–17:00', from: 15 },
+  { label: '17:00–19:00', from: 17 },
 ];
+
+// Returns true if a slot starting at `fromHour` is already past for a given date
+function isSlotPast(dateStr, fromHour) {
+  if (!dateStr) return false;
+  const now = new Date();
+  const selected = new Date(dateStr);
+  // Only apply cutoff for today
+  if (
+    selected.getFullYear() === now.getFullYear() &&
+    selected.getMonth() === now.getMonth() &&
+    selected.getDate() === now.getDate()
+  ) {
+    return fromHour <= now.getHours();
+  }
+  return false;
+}
 
 const schema = yup.object({
   scheduledDate: yup.string().required('Date required'),
@@ -58,8 +78,9 @@ function LocationPicker({ onLocationSet, savedAddress }) {
   const [gpsCoords, setGpsCoords] = useState(null);
   const [detecting, setDetecting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  // FIX: Track if GPS was explicitly denied so we show manual form instead of blocking
+  const [gpsDenied, setGpsDenied] = useState(false);
 
-  // Manual fields (initially empty or from savedAddress, then populated by GPS)
   const [manual, setManual] = useState({
     line1: savedAddress?.line1 || '',
     city: savedAddress?.city || '',
@@ -69,65 +90,97 @@ function LocationPicker({ onLocationSet, savedAddress }) {
 
   const detectGPS = useCallback((isAuto = false) => {
     if (!navigator.geolocation) {
-      if (!isAuto) toast.error('Geolocation is not supported by your browser');
+      if (!isAuto) toast.error('Geolocation not supported. Enter address manually.');
+      setGpsDenied(true);
       return;
     }
     setDetecting(true);
+    setGpsDenied(false);
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
         const { latitude: lat, longitude: lng } = coords;
-        setGpsCoords([lng, lat]); // [lng, lat] for MongoDB
+        setGpsCoords([lng, lat]);
         if (!isAuto) toast.loading('Locating service area…', { id: 'geocode' });
         const addr = await reverseGeocode(lat, lng);
         if (!isAuto) toast.dismiss('geocode');
-
         if (addr) {
-          setManual({
-            line1: addr.line1 || '',
-            city: addr.city || '',
-            state: addr.state || '',
-            pincode: addr.pincode || '',
-          });
+          setManual({ line1: addr.line1 || '', city: addr.city || '', state: addr.state || '', pincode: addr.pincode || '' });
           if (!isAuto) toast.success('Location detected!');
         } else {
-          if (!isAuto) toast.success(`GPS locked!`);
+          if (!isAuto) toast.success('GPS locked!');
         }
         setDetecting(false);
         setConfirmed(false);
       },
       (err) => {
         setDetecting(false);
-        if (!isAuto) {
-          if (err.code === 1) toast.error('Check location permissions in your browser.');
-          else toast.error('GPS unavailable. Please try again.');
+        // FIX: GPS denied → show manual form, don't block
+        if (err.code === 1) {
+          setGpsDenied(true);
+          if (!isAuto) toast('GPS blocked. Enter your address manually.', { icon: '📍' });
+        } else {
+          if (!isAuto) toast.error('GPS unavailable. Enter address manually.');
+          setGpsDenied(true);
         }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   }, []);
 
-  useEffect(() => {
-    if (!gpsCoords) {
-      detectGPS(true);
-    }
-  }, [detectGPS, gpsCoords]);
+  useEffect(() => { detectGPS(true); }, [detectGPS]);
 
-  function handleConfirm() {
-    if (!gpsCoords) {
-      toast.error('Please detect your location first');
-      return;
-    }
-    if (!manual.line1 || !manual.city) {
-      toast.error('Address details missing. Please try redetecting.');
+  function handleManualConfirm() {
+    if (!manual.city || !manual.line1 || !manual.pincode) {
+      toast.error('Please fill in your address, city and pincode');
       return;
     }
     setConfirmed(true);
-    onLocationSet({
-      coords: gpsCoords, 
-      address: manual,
-    });
+    // FIX: No GPS? Pass null coords — backend will use city-based matching
+    onLocationSet({ coords: gpsCoords, address: manual, manualOnly: !gpsCoords });
+    toast.success('Address confirmed!');
+  }
+
+  function handleGpsConfirm() {
+    if (!gpsCoords) { toast.error('Please detect your location first'); return; }
+    if (!manual.city) { toast.error('City not detected. Please redetect or enter manually.'); return; }
+    setConfirmed(true);
+    onLocationSet({ coords: gpsCoords, address: manual });
     toast.success('Location confirmed!');
   }
+
+  // ── Manual address form (shown when GPS is blocked/denied) ──────────────────
+  const ManualForm = () => (
+    <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+      <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+        <span className="text-lg">📍</span>
+        <p className="text-xs text-amber-800 font-medium">GPS blocked. Enter your address below to continue.</p>
+      </div>
+      <input value={manual.line1} onChange={e => { setManual(m => ({ ...m, line1: e.target.value })); setConfirmed(false); }}
+        placeholder="House No. / Street / Landmark *" className="input-field text-sm" />
+      <div className="grid grid-cols-2 gap-2">
+        <input value={manual.city} onChange={e => { setManual(m => ({ ...m, city: e.target.value })); setConfirmed(false); }}
+          placeholder="City *" className="input-field text-sm" />
+        <input value={manual.state} onChange={e => { setManual(m => ({ ...m, state: e.target.value })); setConfirmed(false); }}
+          placeholder="State *" className="input-field text-sm" />
+      </div>
+      <input value={manual.pincode} onChange={e => { setManual(m => ({ ...m, pincode: e.target.value })); setConfirmed(false); }}
+        placeholder="Pincode (6 digits) *" maxLength={6} className="input-field text-sm" />
+      {!confirmed ? (
+        <button type="button" onClick={handleManualConfirm}
+          className="w-full py-3.5 rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2">
+          <CheckCircle2 size={18} /> Confirm Address
+        </button>
+      ) : (
+        <div className="flex items-center justify-center gap-2 text-emerald-600 bg-emerald-50 py-3.5 rounded-2xl border border-emerald-100 text-sm font-bold">
+          <CheckCircle2 size={18} /> Address Confirmed
+        </div>
+      )}
+      <button type="button" onClick={() => { setGpsDenied(false); detectGPS(); }}
+        className="text-xs text-primary-600 hover:underline font-medium w-full text-center">
+        Try GPS again
+      </button>
+    </div>
+  );
 
   return (
     <div className="card p-5 space-y-4 border-2 border-primary-50">
@@ -138,7 +191,7 @@ function LocationPicker({ onLocationSet, savedAddress }) {
           </div>
           <div>
             <h3 className="font-bold text-slate-800 text-sm">Service Location</h3>
-            <p className="text-xs text-slate-400">Direct GPS detection</p>
+            <p className="text-xs text-slate-400">{gpsDenied ? 'Manual entry' : 'GPS detection'}</p>
           </div>
         </div>
         {confirmed && (
@@ -149,64 +202,53 @@ function LocationPicker({ onLocationSet, savedAddress }) {
       </div>
 
       <div className="space-y-3 pt-1">
-        {/* Detection UI */}
-        {!gpsCoords && !detecting && (
-          <button
-            type="button"
-            onClick={() => detectGPS()}
-            className="w-full py-6 rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/30 flex flex-col items-center justify-center gap-2 text-primary-600 hover:bg-primary-50 transition-all"
-          >
+        {/* GPS denied → show manual form */}
+        {gpsDenied && <ManualForm />}
+
+        {/* GPS detecting */}
+        {!gpsDenied && !gpsCoords && !detecting && (
+          <button type="button" onClick={() => detectGPS()}
+            className="w-full py-6 rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/30 flex flex-col items-center justify-center gap-2 text-primary-600 hover:bg-primary-50 transition-all">
             <Navigation className="animate-pulse" size={24} />
             <span className="text-sm font-bold">Detect My Location</span>
           </button>
         )}
 
-        {detecting && (
+        {!gpsDenied && detecting && (
           <div className="w-full py-6 rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/30 flex flex-col items-center justify-center gap-2 text-primary-600">
             <Loader className="animate-spin" size={24} />
             <span className="text-sm font-bold animate-pulse">Finding your GPS location…</span>
           </div>
         )}
 
-        {gpsCoords && (
+        {/* GPS acquired */}
+        {!gpsDenied && gpsCoords && (
           <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
-               <div className="flex items-start gap-2">
-                 <MapPin size={14} className="text-primary-500 mt-0.5 shrink-0" />
-                 <div>
-                   <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Detected address</p>
-                   <p className="text-sm text-slate-600 font-medium mt-1">
-                     {manual.line1 ? `${manual.line1}, ` : ''}{manual.city}, {manual.state} {manual.pincode}
-                   </p>
-                 </div>
-               </div>
-               <button 
-                type="button"
-                onClick={() => detectGPS()}
-                className="text-[10px] font-bold text-primary-600 hover:underline uppercase tracking-tighter"
-               >
-                 Not correct? Redetect GPS
-               </button>
+              <div className="flex items-start gap-2">
+                <MapPin size={14} className="text-primary-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Detected address</p>
+                  <p className="text-sm text-slate-600 font-medium mt-1">
+                    {manual.line1 ? `${manual.line1}, ` : ''}{manual.city}, {manual.state} {manual.pincode}
+                  </p>
+                </div>
+              </div>
+              <button type="button" onClick={() => detectGPS()}
+                className="text-[10px] font-bold text-primary-600 hover:underline uppercase tracking-tighter">
+                Not correct? Redetect GPS
+              </button>
             </div>
-
-            {/* Optional field for flat/house info */}
             <div className="relative">
-              <input
-                value={manual.line1}
+              <input value={manual.line1}
                 onChange={e => { setManual(m => ({ ...m, line1: e.target.value })); setConfirmed(false); }}
                 placeholder="Add Flat / House No / Landmark (Optional)"
-                className="input-field pr-10 text-sm"
-              />
+                className="input-field pr-10 text-sm" />
               <PenLine size={14} className="absolute right-3 top-3.5 text-slate-400" />
             </div>
-
             {!confirmed ? (
-              <button
-                type="button"
-                onClick={handleConfirm}
-                disabled={detecting}
-                className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-              >
+              <button type="button" onClick={handleGpsConfirm}
+                className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2">
                 <CheckCircle2 size={18} /> Confirm Location
               </button>
             ) : (
@@ -228,9 +270,12 @@ export default function BookingForm() {
   const { serviceId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useDispatch();
   const loading = useSelector(selectBookingLoading);
   const user = useSelector(selectUser);
+
+  const prefill = location.state?.prefill;
 
   const [service, setService] = useState(null);
   const [couponApplied, setCouponApplied] = useState(null);
@@ -242,14 +287,25 @@ export default function BookingForm() {
     resolver: yupResolver(schema),
     defaultValues: {
       scheduledDate: dayjs().format('YYYY-MM-DD'),
-      city: user?.addresses?.[0]?.city || '',
-      state: user?.addresses?.[0]?.state || '',
-      pincode: user?.addresses?.[0]?.pincode || '',
-      line1: user?.addresses?.[0]?.line1 || '',
+      city: prefill?.city || user?.addresses?.[0]?.city || '',
+      state: prefill?.state || user?.addresses?.[0]?.state || '',
+      pincode: prefill?.pincode || user?.addresses?.[0]?.pincode || '',
+      line1: prefill?.line1 || user?.addresses?.[0]?.line1 || '',
     },
   });
 
   const selectedSlot = watch('timeSlot');
+
+  useEffect(() => {
+    // If prefill is provided, simulate confirming it to activate submission
+    if (prefill) {
+      setLocationData({
+        address: prefill,
+        coords: prefill.location?.coordinates || null,
+        manualOnly: !prefill.location?.coordinates
+      });
+    }
+  }, [prefill]);
 
   useEffect(() => {
     apiService.getServiceById(serviceId)
@@ -268,8 +324,13 @@ export default function BookingForm() {
 
   async function onSubmit(data) {
     try {
-      // Use GPS coords if available, else default to Hyderabad as fallback
-      const coords = locationData?.coords || [78.4867, 17.3850];
+      // FIX: Block submit if no location confirmed at all
+      if (!locationData) {
+        toast.error('Please confirm your service location first');
+        return;
+      }
+      // FIX: Only use GPS coords if we have them — no silent fallback to wrong city
+      const coords = locationData?.coords || null;
 
       const rawSlot = data.timeSlot || '';
       const parts = rawSlot.split(/[–\-—]/);
@@ -284,11 +345,11 @@ export default function BookingForm() {
         scheduledDate: scheduledDate.toISOString(),
         timeSlot: { from: slotFrom, to: slotTo },
         serviceAddress: {
-          line1: data.line1,
-          city: data.city,
-          state: data.state,
-          pincode: String(data.pincode),
-          location: { coordinates: coords },
+          line1: locationData.address?.line1 || data.line1,
+          city: locationData.address?.city || data.city,
+          state: locationData.address?.state || data.state,
+          pincode: String(locationData.address?.pincode || data.pincode),
+          ...(coords ? { location: { coordinates: coords } } : {}),
         },
         customerNotes: data.notes?.trim() || undefined,
         couponCode: couponApplied?.code || undefined,
@@ -319,7 +380,7 @@ export default function BookingForm() {
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       <Header />
-      <div className="pt-16 max-w-2xl mx-auto px-4 py-6">
+      <div className="max-w-2xl mx-auto px-4 py-6">
         <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-slate-500 hover:text-slate-700 mb-6 text-sm font-medium">
           <ChevronLeft size={16} /> Back
         </button>
@@ -331,6 +392,10 @@ export default function BookingForm() {
               <div className="flex-1">
                 <h2 className="font-bold text-slate-900">{service.name}</h2>
                 <p className="text-sm text-slate-500">{service.duration} min · ₹{service.basePrice} per unit</p>
+                <div className="mt-1.5 flex items-center gap-1.5 text-xs text-emerald-700 font-semibold bg-emerald-50 w-fit px-2.5 py-0.5 rounded-md border border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                  Instant location radar matching
+                </div>
               </div>
             </div>
             {/* Quantity selector */}
@@ -383,27 +448,35 @@ export default function BookingForm() {
               <Clock className="text-primary-600" size={18} />
               <h3 className="font-semibold text-slate-800">Select Time Slot</h3>
             </div>
+            {/* FIX: Past time slots disabled for today */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {TIME_SLOTS.map(slot => (
-                <button
-                  key={slot}
-                  type="button"
-                  onClick={() => setValue('timeSlot', slot)}
-                  className={`py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all ${
-                    selectedSlot === slot
-                      ? 'bg-primary-600 border-primary-600 text-white'
-                      : 'border-slate-200 text-slate-600 hover:border-primary-300 bg-white'
-                  }`}
-                >
-                  {slot}
-                </button>
-              ))}
+              {ALL_TIME_SLOTS.map(({ label: slot, from: fromHour }) => {
+                const past = isSlotPast(watch('scheduledDate'), fromHour);
+                return (
+                  <button
+                    key={slot}
+                    type="button"
+                    disabled={past}
+                    onClick={() => !past && setValue('timeSlot', slot)}
+                    className={`py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all relative ${
+                      past
+                        ? 'border-slate-100 text-slate-300 bg-slate-50 cursor-not-allowed'
+                        : selectedSlot === slot
+                        ? 'bg-primary-600 border-primary-600 text-white'
+                        : 'border-slate-200 text-slate-600 hover:border-primary-300 bg-white'
+                    }`}
+                  >
+                    {slot}
+                    {past && <span className="absolute -top-2 -right-1 text-[9px] text-slate-400 font-bold">Past</span>}
+                  </button>
+                );
+              })}
             </div>
             {errors.timeSlot && <p className="text-red-500 text-xs mt-2">{errors.timeSlot.message}</p>}
           </div>
 
           {/* Location Picker — GPS or Manual */}
-          <LocationPicker onLocationSet={handleLocationSet} savedAddress={savedAddress} />
+          <LocationPicker onLocationSet={handleLocationSet} savedAddress={prefill || savedAddress} />
 
           {/* Validation errors for address info */}
           {(errors.line1 || errors.city || errors.state || errors.pincode) && (
@@ -470,19 +543,33 @@ export default function BookingForm() {
             </div>
           )}
 
+          {/* Cancellation Policy — FIX: show BEFORE booking, not after */}
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-xs text-amber-800">
+            <p className="font-bold mb-1.5">📋 Cancellation Policy</p>
+            <ul className="space-y-1 list-disc list-inside">
+              <li>Cancel ≥ 2 hours before: <span className="font-semibold text-green-700">Free</span></li>
+              <li>Cancel within 2 hours: <span className="font-semibold text-amber-700">₹50 cancellation fee</span></li>
+              <li>Cancel after provider arrives: <span className="font-semibold text-red-700">₹100 + travel charges</span></li>
+            </ul>
+          </div>
+
           <button
             type="submit"
-            disabled={loading || !service}
-            className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2"
+            disabled={loading || !service || !locationData}
+            className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2 disabled:opacity-60"
           >
             {loading ? <><Loader size={18} className="animate-spin" /> Creating booking…</> : '✅ Confirm Booking'}
           </button>
+          {!locationData && (
+            <p className="text-center text-xs text-slate-400">👆 Confirm your service location first</p>
+          )}
         </form>
       </div>
     </div>
   );
 }
 
+// FIX: Real coupon validation against API — no more hardcoded ₹50 for any string
 function CouponInput({ serviceBasePrice, onApply, applied }) {
   const [code, setCode] = useState('');
   const [validating, setValidating] = useState(false);
@@ -491,10 +578,16 @@ function CouponInput({ serviceBasePrice, onApply, applied }) {
     if (!code.trim()) return;
     setValidating(true);
     try {
-      toast.success(`Coupon applied! (validation on booking submit)`);
-      onApply({ code: code.toUpperCase(), discountAmount: 50 });
-    } catch {
-      toast.error('Invalid or expired coupon');
+      // Call real coupon validation endpoint
+      const res = await import('@/services/api').then(m =>
+        m.default.get(`/coupons/validate?code=${code.trim().toUpperCase()}&orderValue=${serviceBasePrice}`)
+      );
+      const coupon = res.data.data;
+      onApply({ code: coupon.code, discountAmount: coupon.discountAmount, id: coupon._id });
+      toast.success(`🎉 "${coupon.code}" applied — saving ₹${coupon.discountAmount}!`);
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Invalid or expired coupon code';
+      toast.error(msg);
     } finally {
       setValidating(false);
     }
@@ -519,6 +612,7 @@ function CouponInput({ serviceBasePrice, onApply, applied }) {
         onChange={e => setCode(e.target.value.toUpperCase())}
         placeholder="Enter coupon code"
         className="input-field flex-1"
+        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleApply())}
       />
       <button
         type="button"

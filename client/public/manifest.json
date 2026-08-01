@@ -1,19 +1,43 @@
 {
-  "name": "ServiceHub",
+  "name": "ServiceHub - Home Services",
   "short_name": "ServiceHub",
-  "description": "Urban Company Level Service Platform",
-  "theme_color": "#1976d2",
-  "background_color": "#ffffff",
+  "description": "Premium On-Demand Home Services",
+  "theme_color": "#2563EB",
+  "background_color": "#F8FAFC",
   "display": "standalone",
   "orientation": "portrait",
   "scope": "/",
   "start_url": "/",
   "icons": [
     {
-      "src": "/cat_ac.png",
+      "src": "/logo.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

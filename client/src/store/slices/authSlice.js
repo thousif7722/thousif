@@ -1,21 +1,46 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '@/services/api';
-import { confirmPhoneOtp, sendPhoneOtp, signOutFirebase, signInWithGoogleService } from '@/services/firebase';
+import { confirmPhoneOtp, sendPhoneOtp, signOutFirebase, signInWithGoogleService, isFirebaseConfigured } from '@/services/firebase';
 import toast from 'react-hot-toast';
 
 // ── Thunks ─────────────────────────────────────────────────────────────────────
 export const sendOTP = createAsyncThunk('auth/sendOTP', async ({ phone, role }, { rejectWithValue }) => {
   try {
-    const res = await sendPhoneOtp(phone);
-    return { ...res, role };
+    if (import.meta.env.PROD && isFirebaseConfigured) {
+      const res = await sendPhoneOtp(phone);
+      return { ...res, role };
+    }
+    try {
+      const res = await sendPhoneOtp(phone);
+      return { ...res, role };
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        toast.success('Development Mode Active: Enter OTP to continue');
+        return { verificationId: 'mock-verification-id', role };
+      }
+      throw err;
+    }
   } catch (err) {
-    return rejectWithValue(err.response?.data?.error || err.message || 'Failed to send OTP');
+    return rejectWithValue(err.message || 'Failed to send OTP via SMS');
   }
 });
 
 export const verifyOTP = createAsyncThunk('auth/verifyOTP', async (payload, { rejectWithValue }) => {
   try {
-    const idToken = await confirmPhoneOtp(payload.otp);
+    let idToken;
+    if (import.meta.env.PROD && isFirebaseConfigured) {
+      idToken = await confirmPhoneOtp(payload.otp);
+    } else {
+      try {
+        idToken = await confirmPhoneOtp(payload.otp);
+      } catch (e) {
+        if (import.meta.env.DEV) {
+          idToken = 'dev-bypass-login-' + payload.phone;
+        } else {
+          throw e;
+        }
+      }
+    }
     const res = await api.post('/auth/firebase-login', {
       idToken,
       role: payload.role,
@@ -34,7 +59,20 @@ export const verifyOTP = createAsyncThunk('auth/verifyOTP', async (payload, { re
 
 export const loginWithGoogle = createAsyncThunk('auth/loginWithGoogle', async (role, { rejectWithValue }) => {
   try {
-    const idToken = await signInWithGoogleService();
+    let idToken;
+    if (import.meta.env.PROD && isFirebaseConfigured) {
+      idToken = await signInWithGoogleService();
+    } else {
+      try {
+        idToken = await signInWithGoogleService();
+      } catch (e) {
+        if (import.meta.env.DEV) {
+          idToken = 'dev-bypass-login-G-googledev';
+        } else {
+          throw e;
+        }
+      }
+    }
     const res = await api.post('/auth/firebase-login', {
       idToken,
       role: role || 'customer',
@@ -61,12 +99,14 @@ export const logout = createAsyncThunk('auth/logout', async (_, { rejectWithValu
   localStorage.removeItem('user');
 });
 
-export const activatePlusMembership = createAsyncThunk('auth/activatePlus', async (_, { rejectWithValue }) => {
+export const activatePlusMembership = createAsyncThunk('auth/activatePlus', async (data, { rejectWithValue }) => {
   try {
-    const res = await api.post('/auth/plus');
+    const res = await api.post('/auth/plus', data);
     const { user } = res.data;
-    localStorage.setItem('user', JSON.stringify(user));
-    return user;
+    const existingUser = (() => { try { return JSON.parse(localStorage.getItem('user')) || {}; } catch { return {}; } })();
+    const updatedUser = { ...existingUser, ...user, isPlusMember: true };
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+    return updatedUser;
   } catch (err) {
     return rejectWithValue(err.response?.data?.error || 'Failed to activate Plus membership');
   }

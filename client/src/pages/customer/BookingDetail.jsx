@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchBookingById, selectCurrentBooking, selectBookingLoading } from '@/store/slices/bookingSlice';
+import { fetchBookingById, selectCurrentBooking, selectBookingLoading, selectCurrentMaterials } from '@/store/slices/bookingSlice';
 import { apiService } from '@/services/api';
+import { getSocket } from '@/services/socket';
 import Header from '@/components/common/Header';
 import { StatusBadge, StarRating, ConfirmModal, PageLayout } from '@/components/common/UI';
-import { MapPin, Clock, Phone, Star, AlertCircle, Download, MessageCircle, ChevronRight } from 'lucide-react';
+import { MapPin, Clock, Phone, Star, AlertCircle, Download, MessageCircle, ChevronRight, AlertTriangle } from 'lucide-react';
+
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 
@@ -14,22 +16,109 @@ export default function BookingDetail() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const booking = useSelector(selectCurrentBooking);
+  const materials = useSelector(selectCurrentMaterials);
   const loading = useSelector(selectBookingLoading);
   const [cancelModal, setCancelModal] = useState(false);
   const [reviewModal, setReviewModal] = useState(false);
+  const [complaintModal, setComplaintModal] = useState(false);
   const [showProviderModal, setShowProviderModal] = useState(false);
+  const [approvingMaterials, setApprovingMaterials] = useState(false);
+
   const [providerProfile, setProviderProfile] = useState(null);
+  const [noProvidersFound, setNoProvidersFound] = useState(false);
+  const [retryingMatch, setRetryingMatch] = useState(false);
+  const [respondingQuote, setRespondingQuote] = useState(false);
 
   useEffect(() => {
     dispatch(fetchBookingById(id));
+    // Fast 3-second evaluation polling while pending, 15s for active jobs
+    const pollIntervalMs = booking?.status === 'pending' ? 3000 : 15000;
     const interval = setInterval(() => {
-      // Poll while job is active (includes in_progress so endOtp is always fresh)
       if (['pending','assigned','accepted','in_progress'].includes(booking?.status)) {
         dispatch(fetchBookingById(id));
       }
-    }, 10000); // Every 10 seconds
+    }, pollIntervalMs);
     return () => clearInterval(interval);
   }, [id, dispatch, booking?.status]);
+
+  useEffect(() => {
+    if (booking?.providerId || (booking?.status && booking?.status !== 'pending')) {
+      setNoProvidersFound(false);
+    } else if (booking?.noProvidersAvailable || booking?.nearbyProvidersCount === 0) {
+      setNoProvidersFound(true);
+    }
+  }, [booking?.noProvidersAvailable, booking?.nearbyProvidersCount, booking?.providerId, booking?.status]);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (socket) {
+      const handleStatusUpdate = (data) => {
+        if (data.bookingId === id || !data.bookingId) {
+          setNoProvidersFound(false);
+          dispatch(fetchBookingById(id));
+          if (data.provider?.name) {
+            toast.success(`🎉 Provider found: ${data.provider.name}!`, { id: 'provider_assigned_toast' });
+          }
+        }
+      };
+
+      const handleNoProviders = (data) => {
+        if (data.bookingId === id || !data.bookingId) {
+          setNoProvidersFound(true);
+          toast.error(data.message || 'No service providers currently available in your location', { id: 'no_providers_toast' });
+        }
+      };
+
+      const handleFailed = (data) => {
+        if (data.bookingId === id) {
+          setNoProvidersFound(true);
+          dispatch(fetchBookingById(id));
+          toast.error(data.message || 'Booking matching failed', { id: 'booking_failed_toast' });
+        }
+      };
+      
+      socket.on('booking:assigned', handleStatusUpdate);
+      socket.on('booking:accepted', handleStatusUpdate);
+      socket.on('booking:status_update', handleStatusUpdate);
+      socket.on('booking:completed', handleStatusUpdate);
+      socket.on('booking:paid', handleStatusUpdate);
+      socket.on('booking:no_providers', handleNoProviders);
+      socket.on('booking:failed', handleFailed);
+      socket.on('booking:quote_requested', handleStatusUpdate);
+      socket.on('booking:quote_responded', handleStatusUpdate);
+
+      return () => {
+        socket.off('booking:assigned', handleStatusUpdate);
+        socket.off('booking:accepted', handleStatusUpdate);
+        socket.off('booking:status_update', handleStatusUpdate);
+        socket.off('booking:completed', handleStatusUpdate);
+        socket.off('booking:paid', handleStatusUpdate);
+        socket.off('booking:no_providers', handleNoProviders);
+        socket.off('booking:failed', handleFailed);
+        socket.off('booking:quote_requested', handleStatusUpdate);
+        socket.off('booking:quote_responded', handleStatusUpdate);
+      };
+    }
+  }, [id, dispatch]);
+
+  async function handleRetryMatch() {
+    setRetryingMatch(true);
+    try {
+      const res = await apiService.retryMatch(id);
+      if (res.data.data?.providerAssigned) {
+        toast.success(res.data.message || 'Provider assigned!');
+        setNoProvidersFound(false);
+        dispatch(fetchBookingById(id));
+      } else {
+        toast.error(res.data.message || 'No providers available in your location yet.');
+        setNoProvidersFound(true);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to search for providers');
+    } finally {
+      setRetryingMatch(false);
+    }
+  }
 
   async function handleCancel() {
     try {
@@ -49,6 +138,19 @@ export default function BookingDetail() {
       setShowProviderModal(true);
     } catch {
       toast.error('Failed to load profile');
+    }
+  }
+
+  async function handleApproveMaterials() {
+    setApprovingMaterials(true);
+    try {
+      await apiService.approveMaterials(id);
+      toast.success('Materials list approved!');
+      dispatch(fetchBookingById(id));
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to approve materials');
+    } finally {
+      setApprovingMaterials(false);
     }
   }
 
@@ -81,12 +183,30 @@ export default function BookingDetail() {
   const canCancel = ['pending','assigned','accepted'].includes(booking.status);
   const canPay = booking.status === 'completed';
   const canReview = booking.status === 'paid' && !booking.isRated;
-  const canTrack = ['accepted','in_progress'].includes(booking.status);
+  const canTrack = false; // Customer tracking removed per configuration
+  
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const complainEligibleStatus = ['completed', 'paid', 'disputed'].includes(booking.status);
+  const isWithin30Days = new Date(booking.scheduledDate) >= thirtyDaysAgo;
+  const canComplain = complainEligibleStatus && isWithin30Days;
+
+  async function handleQuoteResponse(action) {
+    setRespondingQuote(true);
+    try {
+      await apiService.respondToQuote(id, action);
+      toast.success(action === 'approve' ? '✅ Quotation approved! Total cost updated.' : 'Quotation declined.');
+      dispatch(fetchBookingById(id));
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to respond to quote');
+    } finally {
+      setRespondingQuote(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       <Header />
-      <div className="pt-16 max-w-2xl mx-auto px-4 py-6">
+      <div className="max-w-2xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div>
@@ -98,6 +218,100 @@ export default function BookingDetail() {
 
         {/* Status timeline */}
         <StatusTimeline booking={booking} />
+
+        {/* ── Rapido-Style Provider Search & Spot View (Pending Status) ── */}
+        {booking.status === 'pending' && (
+          (noProvidersFound || booking.noProvidersAvailable || booking.nearbyProvidersCount === 0) ? (
+            /* 🚫 Spot View Banner: No Service Providers Available */
+            <div className="card p-6 mb-5 border-2 border-amber-400 bg-gradient-to-br from-amber-50/90 via-orange-50/50 to-amber-100/40 shadow-lg relative overflow-hidden animate-fade-in">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-2xl font-bold shadow-md shadow-amber-200 shrink-0">
+                  👨‍🔧
+                </div>
+                <div className="flex-1">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100/90 text-amber-900 rounded-full text-xs font-extrabold uppercase tracking-wider mb-2 border border-amber-300">
+                    <AlertTriangle size={13} className="text-amber-600" />
+                    Spot View Alert
+                  </div>
+                  <h3 className="text-lg font-extrabold text-slate-900 leading-snug">
+                    Currently no service providers available in your location
+                  </h3>
+                  <p className="text-slate-650 text-sm mt-1 leading-relaxed">
+                    We searched near <strong className="text-slate-900">{booking.serviceAddress?.line1 || booking.serviceAddress?.city}</strong>, but all technicians are currently offline or busy with other bookings.
+                  </p>
+                </div>
+              </div>
+
+              {/* Information & Assistance Box */}
+              <div className="mt-4 bg-white/85 backdrop-blur-sm rounded-2xl p-4 border border-amber-200 space-y-2.5">
+                <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                  <span className="text-base shrink-0">🔔</span>
+                  <span><strong>Auto-Notification:</strong> You'll receive a instant push notification the moment a provider comes online in your area.</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                  <span className="text-base shrink-0">🕒</span>
+                  <span><strong>Flexible Scheduling:</strong> Your request remains queued for assignment, or you can retry searching right now.</span>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="mt-5 flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={handleRetryMatch}
+                  disabled={retryingMatch}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-3.5 px-4 rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-amber-200 transition-all disabled:opacity-50"
+                >
+                  {retryingMatch ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Searching Nearby Providers…
+                    </>
+                  ) : (
+                    <>🔄 Search Again in My Area</>
+                  )}
+                </button>
+                <button
+                  onClick={() => setCancelModal(true)}
+                  className="btn-secondary py-3.5 px-4 text-xs sm:text-sm text-slate-700 border-slate-300 font-semibold"
+                >
+                  Cancel Booking
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* 📡 Live Radar Searching Card */
+            <div className="card p-6 mb-5 border-2 border-primary-400 bg-gradient-to-br from-blue-50/90 via-indigo-50/50 to-slate-50 shadow-lg relative overflow-hidden animate-fade-in">
+              <div className="flex flex-col sm:flex-row items-center gap-5">
+                {/* Live Radar Pulse Effect */}
+                <div className="relative flex items-center justify-center w-24 h-24 shrink-0">
+                  <div className="absolute inset-0 rounded-full bg-primary-400/20 animate-ping" />
+                  <div className="absolute inset-2 rounded-full bg-primary-500/30 animate-pulse" />
+                  <div className="relative z-10 w-16 h-16 rounded-full bg-primary-600 text-white flex items-center justify-center text-3xl shadow-xl shadow-primary-300">
+                    📡
+                  </div>
+                </div>
+
+                <div className="flex-1 text-center sm:text-left">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-100 text-primary-800 rounded-full text-xs font-extrabold tracking-wider uppercase mb-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Rapido Spot Search Active
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    Connecting to nearby technicians...
+                  </h3>
+                  <p className="text-slate-600 text-xs sm:text-sm mt-1">
+                    Searching top-rated service providers near <span className="font-semibold text-slate-800">{booking.serviceAddress?.city || 'your location'}</span>.
+                  </p>
+
+                  <div className="mt-3 flex items-center justify-center sm:justify-start gap-2 text-xs font-medium text-primary-700 bg-white/80 py-2 px-3.5 rounded-xl border border-primary-100 shadow-sm w-fit mx-auto sm:mx-0">
+                    <div className="w-3.5 h-3.5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                    Matching technician ratings & distance...
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        )}
 
         {/* Service info */}
         <div className="card p-5 mb-4">
@@ -124,6 +338,46 @@ export default function BookingDetail() {
             {booking.serviceAddress?.line1}, {booking.serviceAddress?.city}, {booking.serviceAddress?.state} — {booking.serviceAddress?.pincode}
           </p>
         </div>
+
+        {/* ── Start PIN — visible when job is assigned/accepted ── */}
+        {(booking.status === 'assigned' || booking.status === 'accepted') && (
+          <div className="card p-5 mb-4 border-2 border-primary-500 bg-gradient-to-br from-primary-50 to-indigo-50">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🔑</span>
+                <div>
+                  <h3 className="font-bold text-slate-800">Start Service OTP</h3>
+                  <p className="text-xs text-slate-500">Provide this OTP to the technician when they arrive to start the service</p>
+                </div>
+              </div>
+              <button
+                onClick={() => dispatch(fetchBookingById(id))}
+                className="text-xs text-primary-600 underline font-medium"
+              >
+                Refresh
+              </button>
+            </div>
+            {booking.startOtp ? (
+              <>
+                <div className="flex justify-center gap-3 my-4">
+                  {booking.startOtp.split('').map((digit, i) => (
+                    <div key={i} className="w-16 h-20 bg-white border-2 border-primary-400 rounded-2xl flex items-center justify-center text-4xl font-extrabold text-primary-600 shadow-lg">
+                      {digit}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-center text-xs text-slate-400">
+                  🔒 Only share when the provider is physically present at your location
+                </p>
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-2" />
+                <p className="text-sm text-slate-650">OTP loading... tap <strong>Refresh</strong> if it doesn't appear</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Completion PIN — visible only when job is in progress ── */}
         {booking.status === 'in_progress' && (
@@ -165,7 +419,7 @@ export default function BookingDetail() {
           </div>
         )}
 
-        {/* Provider info */}
+        {/* Provider info with Google Trust Badges (Pillar 2) */}
         {booking.providerId && (
           <div className="card p-5 mb-4 group cursor-pointer hover:border-primary-300 transition-all" onClick={() => fetchProviderProfile(booking.providerId._id)}>
             <div className="flex items-center justify-between">
@@ -178,11 +432,19 @@ export default function BookingDetail() {
                   )}
                 </div>
                 <div>
-                  <h3 className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-0.5">Service Provider</h3>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <h3 className="text-xs font-medium text-slate-500 uppercase tracking-widest">Service Provider</h3>
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                      ✓ Verified Partner
+                    </span>
+                  </div>
                   <p className="font-bold text-slate-800">{booking.providerId.name}</p>
-                  <div className="flex items-center gap-1 text-amber-500 text-xs mt-0.5 font-medium">
-                    <Star size={12} fill="currentColor" />
-                    <span>{booking.providerId.rating}</span>
+                  <div className="flex items-center gap-2 text-xs mt-0.5 font-medium">
+                    <span className="flex items-center gap-1 text-amber-500 font-bold">
+                      <Star size={12} fill="currentColor" /> {booking.providerId.rating || 4.9}
+                    </span>
+                    <span className="text-slate-400">·</span>
+                    <span className="text-slate-600 font-medium">Verified Professional</span>
                   </div>
                 </div>
               </div>
@@ -203,9 +465,217 @@ export default function BookingDetail() {
           </div>
         )}
 
+        {/* 🛡️ ANTI-FRAUD & WARRANTY WARNING BANNER */}
+        {['accepted', 'in_progress'].includes(booking.status) && (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 mb-4 shadow-sm text-xs">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white shrink-0 flex items-center justify-center font-bold text-sm">
+                ⚠️
+              </div>
+              <div className="flex-1">
+                <h4 className="font-extrabold text-slate-900 text-xs">Protect Your 30-Day Warranty!</h4>
+                <p className="text-slate-600 mt-1 leading-relaxed">
+                  Never pay cash directly to technicians outside the app! All extra work & parts must be approved in-app to remain eligible for our <strong>30-Day Free Revisit Guarantee & Damage Protection</strong>.
+                </p>
+                <div className="mt-2.5 flex items-center justify-between border-t border-amber-200/60 pt-2">
+                  <span className="text-[11px] text-amber-800 font-semibold">Offered direct cash deal?</span>
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const res = await apiService.reportOffAppDeal(booking._id);
+                        toast.success(res.data.message || 'Thank you for staying safe! 🛡️ You saved yourself from unauthorized repair fraud.');
+                      } catch (err) {
+                        toast.error(err.response?.data?.error || 'Failed to submit report');
+                      }
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all"
+                  >
+                    🚩 Report Off-App Direct Deal
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── On-Site Inspection & Extra Issues Quotation Card ── */}
+        {booking.quotation && booking.quotation.status !== 'none' && (
+          <div className={`card p-5 mb-5 border-2 ${
+            booking.quotation.status === 'pending' 
+              ? 'border-amber-400 bg-gradient-to-br from-amber-50/90 via-orange-50/50 to-amber-100/40 shadow-lg'
+              : booking.quotation.status === 'approved'
+              ? 'border-emerald-300 bg-emerald-50/60'
+              : 'border-slate-200 bg-slate-50'
+          }`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🔍</span>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">On-Site Inspection Quotation</h3>
+                  <p className="text-xs text-slate-500">Technician detected additional issues requiring fixes</p>
+                </div>
+              </div>
+              <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider ${
+                booking.quotation.status === 'pending' ? 'bg-amber-500 text-white animate-pulse' :
+                booking.quotation.status === 'approved' ? 'bg-emerald-600 text-white' : 'bg-slate-300 text-slate-700'
+              }`}>
+                {booking.quotation.status === 'pending' ? 'APPROVAL REQUIRED' : booking.quotation.status}
+              </span>
+            </div>
+
+            {booking.quotation.note && (
+              <p className="text-xs text-slate-700 bg-white/80 p-2.5 rounded-xl border border-amber-200/60 mb-3 italic">
+                &ldquo;{booking.quotation.note}&rdquo;
+              </p>
+            )}
+
+            <div className="space-y-2 mb-4 bg-white/90 p-3 rounded-2xl border border-slate-200/80">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Detected Issues & Fixed Charges</p>
+              {booking.quotation.addons?.map((addon, idx) => (
+                <div key={idx} className="flex justify-between items-center text-sm py-1.5 border-b border-slate-100 last:border-0">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    {addon.name}
+                  </span>
+                  <span className="font-extrabold text-slate-900">₹{addon.price?.toLocaleString('en-IN')}</span>
+                </div>
+              ))}
+              <div className="pt-2.5 mt-1 border-t border-slate-200 flex justify-between items-center text-sm font-extrabold">
+                <span className="text-slate-600">Extra Issues Cost</span>
+                <span className="text-amber-600">+ ₹{booking.quotation.totalAddonPrice?.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            {booking.quotation.status === 'pending' && (
+              <div className="space-y-3">
+                <div className="bg-amber-100/90 p-3.5 rounded-xl text-xs text-amber-900 font-medium border border-amber-300 flex justify-between items-center">
+                  <span>New Total Cost (Base Visit + Issues):</span>
+                  <span className="text-lg font-extrabold text-amber-950">₹{(booking.basePrice + booking.quotation.totalAddonPrice).toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleQuoteResponse('approve')}
+                    disabled={respondingQuote}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl text-xs sm:text-sm shadow-md shadow-emerald-200 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {respondingQuote ? 'Processing...' : '✅ Accept & Approve Quote'}
+                  </button>
+                  <button
+                    onClick={() => handleQuoteResponse('decline')}
+                    disabled={respondingQuote}
+                    className="btn-secondary py-3.5 px-4 text-xs sm:text-sm text-slate-600 font-semibold border-slate-300"
+                  >
+                    ❌ Decline Quote
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 🛡️ 30-Day Digital Warranty Vault Card (Pillar 4) */}
+        {(booking.warranty || ['completed', 'paid'].includes(booking.status)) && (
+          <div className="card p-5 mb-5 border-2 border-emerald-400 bg-gradient-to-br from-emerald-50 via-teal-50/60 to-slate-50 shadow-md">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-xl shadow-md">
+                  🛡️
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">30-Day Free Warranty Vault</h3>
+                  <p className="text-xs text-emerald-800 font-medium">Urban Company Grade Service Protection</p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white uppercase tracking-wider">
+                ✓ ACTIVE WARRANTY
+              </span>
+            </div>
+
+            <div className="bg-white/90 rounded-2xl p-3.5 border border-emerald-200 text-xs space-y-2 mb-3">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Warranty Certificate ID:</span>
+                <strong className="text-slate-900 font-mono font-bold">{booking.warranty?.warrantyId || `SH-WRN-${booking._id?.slice(-8).toUpperCase()}`}</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Coverage Expiry Date:</span>
+                <strong className="text-emerald-700 font-bold">
+                  {booking.warranty?.validUntil 
+                    ? dayjs(booking.warranty.validUntil).format('D MMMM YYYY') 
+                    : dayjs(booking.scheduledDate).add(30, 'day').format('D MMMM YYYY')}
+                </strong>
+              </div>
+              <div className="pt-2 border-t border-slate-100 text-slate-500 text-[11px]">
+                🔒 <strong>Guarantee Terms:</strong> Covers 100% labor revisit & repair costs if the same issue reoccurs within 30 days of completion.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Materials Summary */}
+        {materials && (
+          <div className="card p-5 mb-4 border-2 border-slate-100">
+            <h3 className="font-semibold text-slate-800 mb-3 flex items-center justify-between">
+              <span className="flex items-center gap-2">📦 Materials Used</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${materials.customerApproved ? 'bg-green-150 text-green-700' : 'bg-amber-100 text-amber-750'}`}>
+                {materials.customerApproved ? 'Approved' : 'Pending Approval'}
+              </span>
+            </h3>
+            
+            <div className="space-y-3 mb-4">
+              {materials.items?.map((item, idx) => (
+                <div key={idx} className="flex justify-between items-center text-sm py-1 border-b border-slate-100 last:border-0">
+                  <div>
+                    <p className="font-semibold text-slate-800">{item.name}</p>
+                    <p className="text-xs text-slate-400">
+                      {item.brand ? `${item.brand} · ` : ''}{item.quantity} {item.unit}
+                    </p>
+                  </div>
+                  <span className="font-bold text-slate-700">₹{(item.quantity * item.unitPrice).toLocaleString('en-IN')}</span>
+                </div>
+              ))}
+            </div>
+
+            {materials.notes && (
+              <div className="bg-slate-50 p-3 rounded-xl text-xs text-slate-500 mb-4 font-medium italic border border-slate-100">
+                &ldquo;{materials.notes}&rdquo;
+              </div>
+            )}
+
+            {!materials.customerApproved && (
+              <button
+                onClick={handleApproveMaterials}
+                disabled={approvingMaterials}
+                className="w-full btn-primary bg-emerald-600 hover:bg-emerald-700 py-3.5 text-xs flex items-center justify-center gap-1.5 shadow-md transition-all font-bold"
+              >
+                {approvingMaterials ? (
+                  <>Approving…</>
+                ) : (
+                  <>✓ Approve Materials & Update Bill</>
+                )}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Bill */}
         <div className="card p-5 mb-4">
           <h3 className="font-semibold text-slate-800 mb-3">Bill Summary</h3>
+
+          {/* 💵 Payment Mode Badge (Cash vs Online) */}
+          {booking.status === 'paid' && (
+            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xl shrink-0">{booking.paymentMethod === 'cash' ? '💵' : '💳'}</span>
+                <span className="text-sm font-extrabold text-emerald-900 whitespace-nowrap">
+                  {booking.paymentMethod === 'cash' ? 'Paid Cash' : 'Paid Online'}
+                </span>
+              </div>
+              <span className="px-3 py-1 bg-emerald-600 text-white font-extrabold text-xs uppercase rounded-lg shadow whitespace-nowrap">
+                ✓ {booking.paymentMethod === 'cash' ? 'Paid Cash' : 'Paid Online'}
+              </span>
+            </div>
+          )}
+
           <BillBreakdown booking={booking} />
         </div>
 
@@ -226,12 +696,43 @@ export default function BookingDetail() {
               <Download size={16} /> Download Invoice (GST)
             </button>
           )}
+          {['completed', 'paid'].includes(booking.status) && (
+            <button
+              onClick={() => {
+                navigate(`/book/${booking.serviceId?._id}`, {
+                  state: {
+                    prefill: {
+                      city: booking.serviceAddress?.city,
+                      state: booking.serviceAddress?.state,
+                      pincode: booking.serviceAddress?.pincode,
+                      line1: booking.serviceAddress?.line1,
+                    }
+                  }
+                });
+                toast.success('Re-booking this service!');
+              }}
+              className="btn-secondary w-full py-3 flex items-center justify-center gap-2 border-2 border-primary-100 text-primary-600 bg-primary-50/30 hover:bg-primary-50 transition-all font-bold"
+            >
+              🔄 Re-book This Service
+            </button>
+          )}
           {canCancel && (
             <button onClick={() => setCancelModal(true)} className="w-full py-3 rounded-xl border-2 border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 transition-colors">
               Cancel Booking
             </button>
           )}
+
+          {/* ── Raise Complaint button (completed/paid jobs only) ── */}
+          {canComplain && (
+            <button
+              onClick={() => setComplaintModal(true)}
+              className="w-full py-3 rounded-xl border-2 border-orange-200 text-orange-600 font-semibold text-sm hover:bg-orange-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <AlertTriangle size={15} /> Raise a Complaint
+            </button>
+          )}
         </div>
+
       </div>
 
       <ConfirmModal
@@ -246,6 +747,15 @@ export default function BookingDetail() {
       {reviewModal && (
         <ReviewModal bookingId={id} onClose={() => setReviewModal(false)} onSuccess={() => { setReviewModal(false); dispatch(fetchBookingById(id)); }} />
       )}
+
+      {complaintModal && (
+        <ComplaintModal
+          bookingId={id}
+          onClose={() => setComplaintModal(false)}
+          onSuccess={() => { setComplaintModal(false); dispatch(fetchBookingById(id)); toast.success('Complaint raised! Technician will revisit.'); }}
+        />
+      )}
+
 
       {/* Provider Profile Modal */}
       {showProviderModal && providerProfile && (
@@ -422,3 +932,107 @@ function ReviewModal({ bookingId, onClose, onSuccess }) {
     </div>
   );
 }
+
+// ── Complaint Modal ─────────────────────────────────────────────────────────────
+function ComplaintModal({ bookingId, onClose, onSuccess }) {
+  const CATEGORIES = [
+    { value: 'poor_quality', label: '😞 Poor Quality of Work' },
+    { value: 'damage',       label: '🔨 Damage Caused by Technician' },
+    { value: 'behaviour',    label: '😠 Rude or Unprofessional Behaviour' },
+    { value: 'overcharging', label: '💸 Overcharging' },
+    { value: 'no_show',      label: '🚫 Technician Did Not Show Up' },
+    { value: 'safety',       label: '⚠️ Safety Issue' },
+    { value: 'other',        label: '📋 Other Issue' },
+  ];
+
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    if (!category) { toast.error('Please select an issue type'); return; }
+    const finalDesc = description.trim() || 'Service complaint submitted by customer.';
+    setSubmitting(true);
+    try {
+      await apiService.createComplaint({ bookingId, category, description: finalDesc });
+      onSuccess();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to raise complaint');
+    } finally { setSubmitting(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+      <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 max-h-[90vh] overflow-y-auto" style={{ animation: 'slideUp 0.25s ease-out' }}>
+        <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-4 sm:hidden" />
+
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+            <AlertTriangle size={20} className="text-orange-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-900">Raise a Complaint</h3>
+            <p className="text-xs text-slate-500">The technician will revisit to fix the issue</p>
+          </div>
+          <button onClick={onClose} className="ml-auto p-2 rounded-full hover:bg-slate-100 text-slate-400 text-lg font-bold">✕</button>
+        </div>
+
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3 mb-4 text-xs text-orange-700">
+          ⚠️ Only raise a complaint if the work was genuinely unsatisfactory.
+        </div>
+
+        <p className="text-sm font-semibold text-slate-700 mb-2">What went wrong?</p>
+        <div className="grid grid-cols-1 gap-2 mb-4">
+          {CATEGORIES.map(c => (
+            <button
+              key={c.value}
+              onClick={() => setCategory(c.value)}
+              className={`text-left text-sm px-4 py-2.5 rounded-xl border-2 font-medium transition-all ${
+                category === c.value
+                  ? 'border-orange-500 bg-orange-50 text-orange-900 font-bold'
+                  : 'border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Describe the issue <span className="text-slate-400 font-normal text-xs">(optional / brief detail)</span>
+        </label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          rows={3}
+          placeholder="Please describe what happened in detail so we can investigate and resolve your issue quickly…"
+          className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none bg-slate-50 mb-1"
+          maxLength={1000}
+        />
+        <div className="flex justify-between items-center text-xs text-slate-400 mb-5">
+          <span>{description.trim().length < 5 && category ? 'Please type a short description (min 5 chars)' : ''}</span>
+          <span>{description.length}/1000</span>
+        </div>
+
+        <div className="flex gap-3 sticky bottom-0 bg-white pt-2">
+          <button onClick={onClose} className="flex-1 border-2 border-slate-200 text-slate-600 font-semibold rounded-xl py-3 hover:bg-slate-50 text-sm">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !category}
+            className={`flex-1 font-bold rounded-xl py-3 text-sm flex items-center justify-center gap-2 transition-all ${
+              submitting || !category
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-200'
+            }`}
+          >
+            {submitting ? 'Submitting…' : <><AlertTriangle size={15} /> Submit Complaint</>}
+          </button>
+        </div>
+      </div>
+      <style>{`@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
+    </div>
+  );
+}
+

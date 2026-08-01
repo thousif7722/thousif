@@ -29,7 +29,7 @@ export default function ServiceDetail() {
   }, [id]);
 
   if (!service) return (
-    <div className="min-h-screen bg-slate-50 pt-20 flex items-center justify-center">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
     </div>
   );
@@ -136,6 +136,27 @@ export default function ServiceDetail() {
                   📝 About this service
                 </h2>
                 <p className="text-slate-600 text-sm leading-relaxed">{service.description}</p>
+              </div>
+
+              {/* Service Video Demo Card */}
+              <div className="card p-5 bg-slate-900 text-white overflow-hidden relative">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">🎥 Live Demonstration</span>
+                    <h3 className="font-bold text-sm">See how experts perform this service</h3>
+                  </div>
+                </div>
+                <div className="relative aspect-video rounded-xl overflow-hidden bg-black border border-slate-800">
+                  <video 
+                    src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" 
+                    controls 
+                    poster={`/cat_${service.category?.toLowerCase().replace(/\s+/g, '_').replace(/&/g, '')}.png`}
+                    className="w-full h-full object-cover" 
+                  />
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  Our certified technicians use eco-friendly products & high-precision tools for best results.
+                </p>
               </div>
 
               {/* How it works */}

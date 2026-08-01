@@ -63,9 +63,14 @@ function resetRecaptcha() {
 }
 
 export async function sendPhoneOtp(phone) {
-  const verifier = ensureRecaptcha();
-  confirmationResult = await signInWithPhoneNumber(auth, `+91${phone}`, verifier);
-  return { verificationId: confirmationResult.verificationId };
+  try {
+    const verifier = ensureRecaptcha();
+    confirmationResult = await signInWithPhoneNumber(auth, `+91${phone}`, verifier);
+    return { verificationId: confirmationResult.verificationId };
+  } catch (err) {
+    resetRecaptcha();
+    throw err;
+  }
 }
 
 export async function confirmPhoneOtp(code) {

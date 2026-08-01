@@ -7,6 +7,7 @@ import {
   setSelectedCategory, setSearch,
   selectServices, selectCategories,
   selectSelectedCategory, selectServiceLoading,
+  selectPublicSettings,
 } from '@/store/slices/serviceSlice';
 import { selectUser } from '@/store/slices/authSlice';
 import Header from '@/components/common/Header';
@@ -38,6 +39,14 @@ const BANNERS = [
 
 const VIDEO_ADS = [
   {
+    video: 'https://youtu.be/ge0suSTOVvg?si=5crAylnMXVZJEdxf',
+    title: 'ServiceHub Video Spotlight',
+    desc: 'Watch our verified professionals in action delivering quality home services',
+    badge: '🎬 Featured Reel',
+    cta: 'Book Service',
+    category: 'AC Repair',
+  },
+  {
     video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
     title: 'AC Service & Repair',
     desc: 'Beat the heat — certified AC experts at your home today',
@@ -46,11 +55,11 @@ const VIDEO_ADS = [
     category: 'AC Repair',
   },
   {
-    video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    title: 'Home Deep Cleaning',
-    desc: 'Sparkling clean homes in just 4 hours by our experts',
-    badge: '⭐ Top Rated',
-    cta: 'Book Cleaning',
+    video: 'https://youtu.be/oCOq0L2xeag?si=CG-xhnVeC1e-WZl5',
+    title: 'Home Deep Cleaning Showcase',
+    desc: 'Sparkling clean homes in just 4 hours by our certified cleaning experts',
+    badge: '🧹 Deep Clean Special',
+    cta: 'Book Home Cleaning',
     category: 'Cleaning',
   },
   {
@@ -192,6 +201,7 @@ export default function HomePage() {
   const categories = useSelector(selectCategories);
   const selectedCategory = useSelector(selectSelectedCategory);
   const loading = useSelector(selectServiceLoading);
+  const publicSettings = useSelector(selectPublicSettings);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -252,7 +262,7 @@ export default function HomePage() {
         }
       },
       () => setLocationLoading(false),
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
     );
   }, []);
 
@@ -266,7 +276,6 @@ export default function HomePage() {
   return (
     <div className="min-h-screen pb-20" style={{ background: '#f8fafc' }}>
       <Header />
-      <div className="pt-16">
 
         {/* ── HERO ── */}
         <div style={{ background: 'linear-gradient(160deg,#1e3a8a 0%,#1d4ed8 50%,#4338ca 100%)' }} className="text-white px-4 pt-6 pb-24 relative overflow-hidden">
@@ -405,34 +414,53 @@ export default function HomePage() {
               </button>
             </div>
 
-          <div className="grid grid-cols-4 gap-3">
-              {ALL_CATS.map(name => {
-                const cfg = CATEGORY_CONFIG[name];
+            <div className="grid grid-cols-4 gap-3">
+              {Array.from(new Set([...ALL_CATS, ...(categories || []).map(c => c.name || c)])).map(name => {
+                const cfg = CATEGORY_CONFIG[name] || {
+                  img: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=400&q=80',
+                  light: '#f1f5f9',
+                  accent: '#3b82f6',
+                  icon: '🛠️',
+                };
+                const customBanner = publicSettings?.categoryBanners?.find(
+                  b => b.category?.toLowerCase() === name?.toLowerCase() && b.active !== false
+                );
+                const tileImg = customBanner?.heroImage || cfg.img;
+
                 return (
                   <button
                     key={name}
                     onClick={() => navigate(`/category/${encodeURIComponent(name)}`)}
-                    className="flex flex-col items-center gap-2 group"
+                    className="flex flex-col items-center gap-2 group relative"
                   >
                     {/* Real image tile — UC style */}
                     <div
-                      className="w-full rounded-2xl overflow-hidden shadow-md transition-all duration-200 group-hover:scale-105 group-hover:shadow-xl relative"
+                      className="w-full rounded-2xl overflow-hidden shadow-md transition-all duration-200 group-hover:scale-105 group-hover:shadow-xl relative bg-slate-100"
                       style={{ aspectRatio: '1 / 1' }}
                     >
                       <img
-                        src={cfg.img}
+                        src={tileImg}
                         alt={name}
                         className="w-full h-full object-cover"
                         onError={e => {
                           e.target.style.display = 'none';
-                          e.target.parentNode.style.background = cfg.accent;
-                          e.target.parentNode.innerHTML += `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:2rem">${cfg.icon}</span>`;
+                          if (e.target.parentNode) {
+                            e.target.parentNode.style.background = cfg.accent || '#3b82f6';
+                            e.target.parentNode.innerHTML += `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:2rem">${cfg.icon || '🛠️'}</span>`;
+                          }
                         }}
                       />
                       {/* Dark gradient overlay */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+                      
+                      {/* Custom Banner Offer Tag */}
+                      {customBanner?.badge && (
+                        <span className="absolute top-1 left-1 bg-amber-400 text-slate-900 font-extrabold text-[8px] px-1.5 py-0.5 rounded-full shadow-sm">
+                          Offer
+                        </span>
+                      )}
                     </div>
-                    <span className="text-xs text-slate-700 font-semibold text-center leading-tight">{name}</span>
+                    <span className="text-xs text-slate-700 font-semibold text-center leading-tight line-clamp-2">{name}</span>
                   </button>
                 );
               })}
@@ -451,6 +479,9 @@ export default function HomePage() {
               ))}
             </div>
           </div>
+
+          {/* ── Video Spotlight Section ── */}
+          <VideoSpotlightSection navigate={navigate} />
 
           {/* ── Top Rated Services (horizontal scroll) ── */}
           {topRated.length > 0 && (
@@ -532,7 +563,6 @@ export default function HomePage() {
           </div>
 
         </div>
-      </div>
 
       {/* ── Category Services Drawer ── */}
       {drawerCategory && (
@@ -579,5 +609,180 @@ function ServiceCard({ service }) {
         </div>
       </div>
     </Link>
+  );
+}
+
+function getYouTubeEmbedUrl(url, autoplay = true, muted = false) {
+  if (!url) return null;
+  const muteVal = muted ? '1' : '0';
+  const autoParam = autoplay ? `autoplay=1&mute=${muteVal}&enablejsapi=1&rel=0&playsinline=1` : 'rel=0&playsinline=1';
+
+  const shortMatch = url.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
+  if (shortMatch && shortMatch[1]) {
+    return `https://www.youtube.com/embed/${shortMatch[1]}?${autoParam}`;
+  }
+  const watchMatch = url.match(/[?&]v=([a-zA-Z0-9_-]+)/);
+  if (watchMatch && watchMatch[1]) {
+    return `https://www.youtube.com/embed/${watchMatch[1]}?${autoParam}`;
+  }
+  const shortsMatch = url.match(/shorts\/([a-zA-Z0-9_-]+)/);
+  if (shortsMatch && shortsMatch[1]) {
+    return `https://www.youtube.com/embed/${shortsMatch[1]}?${autoParam}`;
+  }
+  return null;
+}
+
+function getYouTubeThumbnail(url) {
+  if (!url) return null;
+  const shortMatch = url.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
+  if (shortMatch && shortMatch[1]) return `https://img.youtube.com/vi/${shortMatch[1]}/hqdefault.jpg`;
+  const watchMatch = url.match(/[?&]v=([a-zA-Z0-9_-]+)/);
+  if (watchMatch && watchMatch[1]) return `https://img.youtube.com/vi/${watchMatch[1]}/hqdefault.jpg`;
+  const shortsMatch = url.match(/shorts\/([a-zA-Z0-9_-]+)/);
+  if (shortsMatch && shortsMatch[1]) return `https://img.youtube.com/vi/${shortsMatch[1]}/hqdefault.jpg`;
+  return null;
+}
+
+function VideoSpotlightSection({ navigate }) {
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const settings = useSelector(selectPublicSettings);
+
+  const rawVideos = settings?.videoSpotlights;
+  const videoList = (Array.isArray(rawVideos) && rawVideos.length > 0)
+    ? rawVideos.filter(v => v.active !== false)
+    : VIDEO_ADS;
+
+  if (!videoList || videoList.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+          <Sparkles size={17} className="text-blue-600" /> Service Demos & Spotlights
+        </h2>
+        <span className="text-xs text-slate-400 font-medium">Watch Pros in Action</span>
+      </div>
+
+      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+        {videoList.map((item, idx) => {
+          const ytThumb = getYouTubeThumbnail(item.video);
+          return (
+            <div
+              key={idx}
+              onClick={() => setSelectedVideo(item)}
+              className="shrink-0 w-64 bg-slate-900 rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all cursor-pointer group relative"
+            >
+              {/* Video Thumbnail container */}
+              <div className="h-36 relative overflow-hidden bg-slate-950">
+                {ytThumb ? (
+                  <img
+                    src={ytThumb}
+                    alt={item.title}
+                    className="w-full h-full object-cover opacity-80 group-hover:opacity-95 group-hover:scale-105 transition-all duration-500"
+                  />
+                ) : (
+                  <video
+                    src={item.video}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="w-full h-full object-cover opacity-70 group-hover:opacity-90 group-hover:scale-105 transition-all duration-500"
+                  />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
+                
+                <span className="absolute top-3 left-3 bg-white/20 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/20">
+                  {item.badge}
+                </span>
+
+                {/* Play Button Overlay */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-blue-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-blue-600 transition-all">
+                    <Play size={20} className="fill-white ml-1" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Video Metadata */}
+              <div className="p-3.5 bg-slate-900 text-white">
+                <h3 className="font-bold text-sm leading-snug line-clamp-1 mb-1">{item.title}</h3>
+                <p className="text-xs text-slate-400 line-clamp-1 mb-3">{item.desc}</p>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/category/${encodeURIComponent(item.category)}`);
+                  }}
+                  className="w-full py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white text-xs font-bold transition-all border border-blue-500/30 flex items-center justify-center gap-1"
+                >
+                  {item.cta || 'Book Now'} <ArrowRight size={12} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Video Modal Player */}
+      {selectedVideo && (
+        <div 
+          className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setSelectedVideo(null)}
+        >
+          <div 
+            className="w-full max-w-2xl bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-slate-800 relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 text-white">
+              <div>
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">{selectedVideo.badge}</span>
+                <h3 className="font-bold text-base leading-tight">{selectedVideo.title}</h3>
+              </div>
+              <button 
+                onClick={() => setSelectedVideo(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center font-bold text-sm transition-all"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="relative aspect-video bg-black">
+              {getYouTubeEmbedUrl(selectedVideo.video, true, false) ? (
+                <iframe
+                  src={getYouTubeEmbedUrl(selectedVideo.video, true, false)}
+                  title={selectedVideo.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              ) : (
+                <video 
+                  src={selectedVideo.video} 
+                  controls 
+                  autoPlay 
+                  muted={false}
+                  playsInline
+                  className="w-full h-full object-contain" 
+                />
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-900 flex items-center justify-between gap-4">
+              <p className="text-xs text-slate-400 line-clamp-1">{selectedVideo.desc}</p>
+              <button 
+                onClick={() => {
+                  const cat = selectedVideo.category;
+                  setSelectedVideo(null);
+                  navigate(`/category/${encodeURIComponent(cat)}`);
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shrink-0 transition-colors shadow-lg"
+              >
+                {selectedVideo.cta}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

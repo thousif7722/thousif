@@ -43,7 +43,7 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-16 max-w-2xl mx-auto px-4 py-6 space-y-5">
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         {/* Avatar + name */}
         <div className="card p-6 flex items-center gap-5">
           <div className="w-20 h-20 bg-gradient-to-br from-primary-400 to-primary-700 rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow">

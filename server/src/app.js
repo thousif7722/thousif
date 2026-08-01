@@ -55,7 +55,10 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+  origin: (origin, callback) => {
+    // Allow mobile apps, local web dev ports (3000, 5173, etc.) and cross-origin PWA requests
+    callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key'],
@@ -187,8 +190,8 @@ async function bootstrap() {
   }
 
   // ── Start HTTP server (always) ─────────────────────────────────────────────
-  httpServer.listen(PORT, () => {
-    logger.info(`🚀 ServiceHub API running on port ${PORT} [${process.env.NODE_ENV}]`);
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    logger.info(`🚀 ServiceHub API running on http://0.0.0.0:${PORT} [${process.env.NODE_ENV}]`);
   });
 }
 

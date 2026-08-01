@@ -33,8 +33,8 @@ async function getLeastBusyStaff(permission, taskType, teamId = null) {
 
     if (taskType === 'kyc') {
       workload = await Provider.aggregate([
-        { $match: { 'kyc.status': 'submitted', assignedTo: { $in: staffIds } } },
-        { $group: { _id: '$assignedTo', count: { $sum: 1 } } }
+        { $match: { 'kyc.status': 'submitted', 'kyc.assignedTo': { $in: staffIds } } },
+        { $group: { _id: '$kyc.assignedTo', count: { $sum: 1 } } }
       ]);
     } else if (taskType === 'complaint') {
       workload = await Complaint.aggregate([

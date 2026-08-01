@@ -20,18 +20,23 @@ export default function PaymentPage() {
       apiService.getBooking(id),
       apiService.getPaymentOptions(id),
     ]).then(([bookingRes, optionsRes]) => {
-      setBooking(bookingRes.data.data.booking);
-      setPaymentOptions(optionsRes.data.data);
-      // Default to online if cash is unavailable
-      if (!optionsRes.data.data.cash?.available) {
+      const b = bookingRes.data.data.booking;
+      const opts = optionsRes.data.data;
+      setBooking(b);
+      setPaymentOptions(opts);
+
+      if (b?.status === 'paid' || opts?.alreadyPaid) {
+        setSuccess(true);
+      }
+      if (!opts?.cash?.available) {
         setPaymentMethod('online');
       }
       setLoading(false);
-    }).catch(() => {
-      toast.error('Booking not found');
+    }).catch((err) => {
+      toast.error(err.response?.data?.error || 'Booking not found');
       navigate('/bookings');
     });
-  }, [id]);
+  }, [id, navigate]);
 
   // Load Razorpay script
   useEffect(() => {
@@ -43,6 +48,7 @@ export default function PaymentPage() {
   }, []);
 
   async function handleOnlinePayment() {
+    if (paying) return;
     setPaying(true);
     try {
       const { data } = await apiService.createOrder({ bookingId: id, paymentMethod: 'online' });
@@ -82,13 +88,19 @@ export default function PaymentPage() {
       });
       rzp.open();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to initiate payment');
+      const errMsg = err.response?.data?.error || err.message;
+      if (errMsg?.includes('already paid') || errMsg?.includes('completed bookings')) {
+        setSuccess(true);
+        toast.success('Booking is already paid!');
+      } else {
+        toast.error(errMsg || 'Failed to initiate payment');
+      }
       setPaying(false);
     }
   }
 
   async function handleCashPayment() {
-    // Re-check options before proceeding
+    if (paying) return;
     if (!paymentOptions?.cash?.available) {
       toast.error(paymentOptions?.cash?.message || 'Cash payment not available');
       return;
@@ -99,7 +111,13 @@ export default function PaymentPage() {
       setSuccess(true);
       toast.success('Cash payment recorded!');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to record cash payment');
+      const errMsg = err.response?.data?.error || err.message;
+      if (errMsg?.includes('already paid') || errMsg?.includes('completed bookings')) {
+        setSuccess(true);
+        toast.success('Booking is already paid!');
+      } else {
+        toast.error(errMsg || 'Failed to record cash payment');
+      }
       setPaying(false);
     }
   }
@@ -129,7 +147,7 @@ export default function PaymentPage() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-16 max-w-md mx-auto px-4 py-6">
+      <div className="max-w-md mx-auto px-4 py-6">
         <h1 className="text-2xl font-bold text-slate-900 mb-6">Complete Payment</h1>
 
         {/* Order summary */}

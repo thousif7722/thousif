@@ -52,37 +52,27 @@ function CompleteJobModal({ booking, onClose, onCompleted }) {
 
   async function handleComplete() {
     if (!isComplete) { setError('Please enter the 4-digit PIN'); return; }
-    if (!navigator.geolocation) { setError('Geolocation is not supported'); return; }
-    
     setSubmitting(true);
-    setError('Verifying location...');
-    
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      try {
-        await apiService.completeJob(booking._id, {
-          workPerformed: workNote.trim() || 'Job completed successfully',
-          extraCharges: 0,
-          endOtp: fullPin,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude
-        });
-        toast.success('Job marked as completed! 🎉');
-        onCompleted();
-        onClose();
-      } catch (err) {
-        const msg = err.response?.data?.error || 'Failed to complete job';
-        setError(msg);
-        if (msg.toLowerCase().includes('pin')) {
-          setPin(['', '', '', '']);
-          inputRefs[0].current?.focus();
-        }
-      } finally {
-        setSubmitting(false);
+    setError('');
+    try {
+      await apiService.completeJob(booking._id, {
+        workPerformed: workNote.trim() || 'Job completed successfully',
+        extraCharges: 0,
+        endOtp: fullPin,
+      });
+      toast.success('Job marked as completed! 🎉');
+      onCompleted();
+      onClose();
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Failed to complete job';
+      setError(msg);
+      if (msg.toLowerCase().includes('pin')) {
+        setPin(['', '', '', '']);
+        inputRefs[0].current?.focus();
       }
-    }, (err) => {
-      setError('Location access required to complete job.');
+    } finally {
       setSubmitting(false);
-    }, { timeout: 10000 });
+    }
   }
 
   return (
@@ -192,6 +182,250 @@ function CompleteJobModal({ booking, onClose, onCompleted }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ON-SITE INSPECTION QUOTE MODAL (Add Extra Issues / Fixed Charges)
+// ══════════════════════════════════════════════════════════════════════════════
+function AddQuoteModal({ booking, onClose, onSubmitted }) {
+  const [catalogServices, setCatalogServices] = useState([]);
+  const [loadingServices, setLoadingServices] = useState(true);
+  const [selectedAddons, setSelectedAddons] = useState([]);
+  const [customName, setCustomName] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    async function fetchCatalog() {
+      try {
+        const res = await apiService.getServices();
+        setCatalogServices(res.data.data || []);
+      } catch (err) {
+        console.error('Failed to load services', err);
+      } finally {
+        setLoadingServices(false);
+      }
+    }
+    fetchCatalog();
+  }, []);
+
+  function handleAddService(svc) {
+    if (selectedAddons.some(a => a.name === svc.name)) return;
+    setSelectedAddons(prev => [...prev, { serviceId: svc._id, name: svc.name, price: svc.basePrice, category: svc.category }]);
+  }
+
+  function handleAddCustom() {
+    if (!customName.trim() || !customPrice || Number(customPrice) <= 0) {
+      toast.error('Enter valid issue name and fixed price');
+      return;
+    }
+    setSelectedAddons(prev => [...prev, { name: customName.trim(), price: Number(customPrice), category: 'On-Site Fix' }]);
+    setCustomName('');
+    setCustomPrice('');
+  }
+
+  function handleRemoveAddon(idx) {
+    setSelectedAddons(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  const totalAddonPrice = selectedAddons.reduce((sum, item) => sum + Number(item.price), 0);
+
+  async function handleSubmitQuote() {
+    if (selectedAddons.length === 0) {
+      toast.error('Please add at least one detected issue/service');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await apiService.submitQuote(booking._id, {
+        addons: selectedAddons,
+        note: note.trim() || 'On-site inspection completed. Additional issues detected.',
+      });
+      toast.success('Quotation sent to customer for approval! 📤');
+      onSubmitted();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to submit quote');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl px-5 pt-5 pb-8 max-w-lg mx-auto max-h-[90vh] overflow-y-auto"
+        style={{ animation: 'slideUp 0.25s ease-out' }}>
+
+        <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-4" />
+
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-xl">🔍</div>
+            <div>
+              <h2 className="font-bold text-slate-900">Add On-Site Inspection Quote</h2>
+              <p className="text-xs text-slate-500">Select detected issues & fixed prices for customer approval</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 text-slate-400">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Selected Addons */}
+        <div className="mb-4">
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+            Selected Extra Issues ({selectedAddons.length})
+          </label>
+          {selectedAddons.length === 0 ? (
+            <div className="p-3 border-2 border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
+              No extra issues added yet. Select from fixed catalog or enter custom issue below.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {selectedAddons.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs">
+                  <div>
+                    <p className="font-bold text-slate-800">{item.name}</p>
+                    <p className="text-amber-700 font-semibold mt-0.5">₹{item.price?.toLocaleString('en-IN')}</p>
+                  </div>
+                  <button onClick={() => handleRemoveAddon(idx)} className="text-red-500 hover:text-red-700 p-1">
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+              <div className="flex justify-between items-center bg-slate-900 text-white rounded-xl px-4 py-3 text-xs font-bold">
+                <span>Extra Issues Subtotal:</span>
+                <span className="text-amber-400 text-sm">₹{totalAddonPrice.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Standardized Spare Parts & Rates Rate-Card (Admin Managed + Standard Defaults) */}
+        <div className="mb-4">
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center justify-between">
+            <span>🔧 Verified Spare Parts & Rate Card</span>
+            <span className="text-[10px] text-amber-600 font-normal">Admin Verified Rates</span>
+          </label>
+          <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+            {(() => {
+              // Extract admin-configured parts from current booking service or catalog
+              const currentSvc = catalogServices.find(s => s._id === booking.serviceId || s._id === booking.serviceId?._id);
+              const adminParts = (currentSvc?.spareParts || []).map(p => ({ name: p.name, price: p.price, icon: p.icon || '🔧' }));
+              const defaultParts = [
+                { name: 'AC Gas Top-Up (R32/R410)', price: 1499, icon: '❄️' },
+                { name: 'Compressor Capacitor Change', price: 450, icon: '⚡' },
+                { name: 'PCB Circuit Repair', price: 1200, icon: '🔌' },
+                { name: 'Drain Pipe Flushing & Jet Wash', price: 299, icon: '🚰' },
+                { name: 'Electrical MCB Switch Replacement', price: 250, icon: '💡' },
+                { name: 'Tap Washer / Leak Seal Fix', price: 180, icon: '🔧' },
+                { name: 'Deep Foam Chemical Jet Service', price: 499, icon: '🧼' },
+                { name: 'Copper Pipe Fitting (per meter)', price: 350, icon: '🛠️' },
+              ];
+              // Merge parts (admin parts prioritized)
+              const allParts = [...adminParts, ...defaultParts.filter(dp => !adminParts.some(ap => ap.name === dp.name))];
+              return allParts.map((part, pIdx) => (
+                <button
+                  key={pIdx}
+                  type="button"
+                  onClick={() => {
+                    if (selectedAddons.some(a => a.name === part.name)) return;
+                    setSelectedAddons(prev => [...prev, { name: part.name, price: part.price, category: 'Standard Spare Part' }]);
+                  }}
+                  className="flex items-center justify-between bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-400 rounded-xl p-2.5 text-left transition-all group"
+                >
+                  <div className="truncate mr-1">
+                    <p className="text-[11px] font-bold text-slate-800 truncate group-hover:text-amber-900">{part.icon} {part.name}</p>
+                    <p className="text-[10px] font-semibold text-amber-600">₹{part.price}</p>
+                  </div>
+                  <span className="text-xs font-extrabold text-amber-500 group-hover:scale-110 transition-transform">+</span>
+                </button>
+              ));
+            })()}
+          </div>
+        </div>
+
+        {/* Catalog Selection */}
+        <div className="mb-4">
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+            Quick Add from Main Services
+          </label>
+          {loadingServices ? (
+            <p className="text-xs text-slate-400">Loading catalog...</p>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+              {catalogServices.map(svc => (
+                <button
+                  key={svc._id}
+                  onClick={() => handleAddService(svc)}
+                  className="shrink-0 border border-slate-200 hover:border-amber-400 bg-slate-50 hover:bg-amber-50 rounded-xl px-3 py-2 text-left transition-all"
+                >
+                  <p className="text-xs font-bold text-slate-800">{svc.name}</p>
+                  <p className="text-[11px] text-amber-600 font-semibold">₹{svc.basePrice}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Custom Issue Entry */}
+        <div className="mb-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+          <label className="block text-xs font-bold text-slate-700 mb-2">Or Enter Custom Spare Part / Work</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="e.g. Gas Leak Refill / PCB Repair"
+              value={customName}
+              onChange={e => setCustomName(e.target.value)}
+              className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            <input
+              type="number"
+              placeholder="₹ Price"
+              value={customPrice}
+              onChange={e => setCustomPrice(e.target.value)}
+              className="w-24 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            <button onClick={handleAddCustom} className="bg-amber-500 text-white font-bold px-3 py-2 rounded-xl text-xs hover:bg-amber-600">
+              Add
+            </button>
+          </div>
+        </div>
+
+        {/* Inspection Note */}
+        <div className="mb-5">
+          <label className="block text-xs font-bold text-slate-700 mb-1">Inspection Notes for Customer</label>
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            placeholder="e.g. Inspected indoor unit, found copper joint leak needing repair..."
+            rows={2}
+            className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 bg-slate-50"
+          />
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 border-2 border-slate-200 text-slate-600 font-semibold rounded-xl py-3 text-xs">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmitQuote}
+            disabled={submitting || selectedAddons.length === 0}
+            className={`flex-1 font-bold rounded-xl py-3 text-xs flex items-center justify-center gap-1.5 transition-all ${
+              submitting || selectedAddons.length === 0
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-200'
+            }`}
+          >
+            {submitting ? 'Sending...' : '📤 Send Quote to Customer'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PROVIDER BOOKINGS PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ProviderBookings() {
@@ -205,6 +439,7 @@ export default function ProviderBookings() {
   const [pendingRequest, setPendingRequest] = useState(null);
   const [requestTimer, setRequestTimer] = useState(0);
   const [completeTarget, setCompleteTarget] = useState(null);
+  const [quoteTarget, setQuoteTarget] = useState(null);
   const [trackingTarget, setTrackingTarget] = useState(null);
   // paymentStatuses: { [bookingId]: { isPaid, paymentMethod, loading, confirming } }
   const [paymentStatuses, setPaymentStatuses] = useState({});
@@ -259,7 +494,7 @@ export default function ProviderBookings() {
       const statuses = filter === 'pending'
         ? ['assigned']
         : filter === 'active'
-          ? ['accepted', 'in_progress', 'completed']
+          ? ['accepted', 'in_progress']
           : filter === 'upcoming'
             ? ['accepted']
             : ['completed', 'paid', 'cancelled'];
@@ -312,30 +547,17 @@ export default function ProviderBookings() {
   }
 
   async function handleStartJob(bookingId) {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser');
-      return;
-    }
-    toast('Verifying location...', { icon: '📍' });
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      try {
-        await apiService.startJob(bookingId, { 
-          otp: '0000', 
-          lat: pos.coords.latitude, 
-          lng: pos.coords.longitude 
-        });
-        toast.success('Job started!');
-        loadBookings();
-      } catch (e) { toast.error(e.response?.data?.error || 'Failed to start job'); }
-    }, (err) => {
-      toast.error('Location access required to start job.');
-    });
+    try {
+      await apiService.startJob(bookingId, { otp: '0000' });
+      toast.success('Job started!');
+      loadBookings();
+    } catch (e) { toast.error(e.response?.data?.error || 'Failed to start job'); }
   }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-16 max-w-2xl mx-auto px-4 py-6">
+      <div className="max-w-2xl mx-auto px-4 py-6">
         <h1 className="text-2xl font-bold text-slate-900 mb-5">My Jobs</h1>
 
         {/* Pending booking request notification */}
@@ -381,15 +603,17 @@ export default function ProviderBookings() {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => handleReject(pendingRequest.bookingId)} className="flex-1 border-2 border-red-200 text-red-600 font-semibold rounded-xl py-3 hover:bg-red-50 flex items-center justify-center gap-2">
+              <button onClick={() => handleReject(pendingRequest.bookingId)} className="flex-1 border-2 border-red-200 text-red-600 font-semibold rounded-2xl py-3.5 hover:bg-red-50 flex items-center justify-center gap-2 text-sm">
                 <XCircle size={18} /> Decline
               </button>
-              <button onClick={() => handleAccept(pendingRequest.bookingId)} className="flex-1 btn-primary py-3 flex items-center justify-center gap-2 text-base">
-                <CheckCircle size={18} /> Accept Job
+              <button onClick={() => handleAccept(pendingRequest.bookingId)} className="flex-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold rounded-2xl py-3.5 flex items-center justify-center gap-2 text-base shadow-lg shadow-emerald-200 transition-all active:scale-95">
+                <CheckCircle size={20} /> ACCEPT JOB NOW (₹{pendingRequest.estimatedEarnings?.toFixed(0) || '?'})
               </button>
             </div>
           </div>
         )}
+
+
 
         {/* Filter tabs */}
         <div className="flex bg-slate-100 rounded-xl p-1 mb-5 gap-1">
@@ -430,8 +654,36 @@ export default function ProviderBookings() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-bold text-slate-800 text-sm">{b.serviceId?.name}</p>
-                        <StatusBadge status={b.status} />
+                        {b.status === 'paid' ? (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold whitespace-nowrap ${b.paymentMethod === 'cash' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'}`}>
+                            {b.paymentMethod === 'cash' ? '💵 Paid Cash' : '💳 Paid Online'}
+                          </span>
+                        ) : (
+                          <StatusBadge status={b.status} />
+                        )}
                       </div>
+
+                      {/* ⏱️ Technician 3-Day Job Completion SLA Badge */}
+                      {!['completed', 'paid', 'cancelled'].includes(b.status) && (
+                        <div className="mt-1.5 mb-1">
+                          {(() => {
+                            const days = Math.floor(dayjs().diff(dayjs(b.createdAt || b.scheduledDate), 'hour') / 24);
+                            if (days >= 3) {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-extrabold bg-red-100 text-red-700 border border-red-200 animate-pulse">
+                                  🚨 OVERDUE: Exceeded 3-Day Completion Limit (Day {days + 1})
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                ⏱️ 3-Day Completion SLA: Day {days + 1} of 3
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+
                       <div className="text-xs text-slate-400 mt-1 space-y-1">
                         <div className="flex items-center gap-1"><Clock size={10} />{dayjs(b.scheduledDate).format('D MMM · h:mm A')}</div>
                         <div className="flex items-center gap-1"><MapPin size={10} />{b.serviceAddress?.city}</div>
@@ -485,6 +737,35 @@ export default function ProviderBookings() {
                       </div>
                     </div>
                   </div>
+
+                  {/* 🔍 ON-SITE QUOTATION / EXTRA ISSUES BUTTON */}
+                  {['accepted', 'in_progress'].includes(b.status) && (
+                    <div className="mt-3 space-y-2">
+                      {b.quotation && b.quotation.status !== 'none' && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs flex justify-between items-center">
+                          <div>
+                            <p className="font-bold text-slate-800 flex items-center gap-1">
+                              <span>🔍 Extra Quote Sent:</span>
+                              <span className="text-amber-700">₹{b.quotation.totalAddonPrice}</span>
+                            </p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">Status: <strong className="uppercase">{b.quotation.status}</strong></p>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            b.quotation.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
+                            b.quotation.status === 'pending' ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-slate-200 text-slate-700'
+                          }`}>
+                            {b.quotation.status}
+                          </span>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setQuoteTarget(b)}
+                        className="w-full flex items-center justify-center gap-2 border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-900 font-extrabold text-xs py-2.5 rounded-xl transition-all"
+                      >
+                        🔍 Add On-Site Detected Issues / Quote
+                      </button>
+                    </div>
+                  )}
 
                   {/* ✅ COMPLETE JOB BUTTON */}
                   {b.status === 'in_progress' && (
@@ -551,6 +832,15 @@ export default function ProviderBookings() {
           booking={completeTarget}
           onClose={() => setCompleteTarget(null)}
           onCompleted={loadBookings}
+        />
+      )}
+
+      {/* Add On-Site Quote Modal */}
+      {quoteTarget && (
+        <AddQuoteModal
+          booking={quoteTarget}
+          onClose={() => setQuoteTarget(null)}
+          onSubmitted={loadBookings}
         />
       )}
 

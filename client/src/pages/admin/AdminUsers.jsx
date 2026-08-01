@@ -53,7 +53,7 @@ export function AdminUsers() {
   return (
     <div className="min-h-screen bg-slate-50 pb-12">
       <Header />
-      <div className="pt-16 page-container">
+      <div className="py-6 page-container">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-900">Users <span className="text-slate-400 font-normal text-base ml-2">({total})</span></h1>
           <button onClick={load} className="btn-secondary flex items-center gap-2 text-sm"><RefreshCw size={14} /> Refresh</button>
@@ -235,7 +235,7 @@ export function AdminProviders() {
   return (
     <div className="min-h-screen bg-slate-50 pb-12">
       <Header />
-      <div className="pt-16 page-container">
+      <div className="py-6 page-container">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-900">Providers <span className="text-slate-400 font-normal text-base ml-2">({total})</span></h1>
         </div>
@@ -544,7 +544,7 @@ export function AdminBookings() {
   return (
     <div className="min-h-screen bg-slate-50 pb-12">
       <Header />
-      <div className="pt-16 page-container">
+      <div className="py-6 page-container">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-900">Bookings <span className="text-slate-400 font-normal text-base ml-2">({total})</span></h1>
         </div>
@@ -636,7 +636,7 @@ export function AdminFinancials() {
   return (
     <div className="min-h-screen bg-slate-50 pb-12">
       <Header />
-      <div className="pt-16 page-container">
+      <div className="py-6 page-container">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-900">Financials</h1>
           <div className="flex items-center gap-3">

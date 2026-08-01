@@ -13,6 +13,7 @@ import {
   Navigation, Radio, Crosshair, Check, AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import DutyZoneMap from '@/components/provider/DutyZoneMap';
 import dayjs from 'dayjs';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -35,15 +36,23 @@ function ServiceAreaCard({ initialRadius = 10 }) {
 
     // Continuous watch (updates whenever position changes)
     watchIdRef.current = navigator.geolocation.watchPosition(
-      ({ coords }) => {
-        setGpsCoords({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy });
+      async ({ coords }) => {
+        const newCoords = { lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy };
+        setGpsCoords(newCoords);
         setGpsStatus('live');
+        
+        // 🛰️ Real-time Auto-Sync to Server & Socket Match Pool
+        try {
+          await apiService.updateProviderLocation({ lat: coords.latitude, lng: coords.longitude });
+        } catch (e) {
+          // silent auto-sync fallback
+        }
       },
       (err) => {
         console.warn('[GPS Watch]', err.message);
         setGpsStatus('error');
       },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
     setGpsStatus('detecting');
 
@@ -211,9 +220,14 @@ export default function ProviderDashboard() {
       apiService.getSchedule(dayjs().format('YYYY-MM-DD')),
       apiService.getEarnings('7d'),
     ]).then(([profileRes, scheduleRes, earningsRes]) => {
-      setProfile(profileRes.data.data);
+      const prof = profileRes.data.data;
+      setProfile(prof);
       setTodayJobs(scheduleRes.data.data);
       setEarnings(earningsRes.data.data);
+      if (prof?.isOnline) {
+        toggleProviderAvailability(true);
+        startLocationTracking();
+      }
     }).finally(() => setLoading(false));
   }, []);
 
@@ -227,12 +241,12 @@ export default function ProviderDashboard() {
       toggleProviderAvailability(newStatus);
       if (newStatus) { startLocationTracking(); toast.success('You are now Online!'); }
       else { stopLocationTracking(); toast('You are now Offline'); }
-    } catch { toast.error('Failed to update status'); }
+    } catch (err) { toast.error(err.response?.data?.error || 'Failed to update status'); }
     setToggling(false);
   }
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 pt-16">
+    <div className="min-h-screen bg-slate-50">
       <Header />
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
@@ -246,7 +260,26 @@ export default function ProviderDashboard() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-16 max-w-2xl mx-auto px-4 py-6 space-y-5">
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+
+        {/* Frozen banner */}
+        {profile?.isBlocked && (
+          <div className="bg-red-600 border border-red-700 rounded-2xl p-4 flex gap-3 items-start shadow-red-200 shadow-lg text-white mb-1">
+            <AlertTriangle size={22} className="shrink-0 mt-0.5 opacity-90" />
+            <div className="flex-1">
+              <p className="font-bold text-lg">Account Frozen</p>
+              <p className="text-sm mt-0.5 opacity-90 leading-snug">
+                {profile.blockReason || 'Your account has been frozen.'}
+              </p>
+              <p className="text-xs font-bold mt-2 bg-red-700/50 inline-block px-2.5 py-1 rounded-lg">
+                Resolve to unfreeze → You cannot receive new jobs.
+              </p>
+            </div>
+            <Link to="/provider/complaints" className="bg-white text-red-700 hover:bg-slate-50 font-bold text-xs px-4 py-2.5 rounded-xl transition-all self-center whitespace-nowrap shadow-sm">
+              Solve Now
+            </Link>
+          </div>
+        )}
 
         {/* Approval banner */}
         {approvalPending && (
@@ -306,6 +339,24 @@ export default function ProviderDashboard() {
             )}
           </div>
         </div>
+
+        {/* ── Rapido-style Duty Zone Map (visible only when Online) ── */}
+        {!approvalPending && (
+          <DutyZoneMap
+            isOnline={!!profile?.isOnline}
+            radiusKm={profile?.serviceRadius || 10}
+            initialCoords={profile?.currentLocation?.coordinates}
+            onLocationSaved={(newCoords) => {
+              setProfile(p => p ? {
+                ...p,
+                currentLocation: {
+                  type: 'Point',
+                  coordinates: [newCoords.lng, newCoords.lat]
+                }
+              } : p);
+            }}
+          />
+        )}
 
         {/* ── Service Area Card (GPS + Radius) ── */}
         {!approvalPending && (

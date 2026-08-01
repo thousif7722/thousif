@@ -13,9 +13,95 @@ export default function ProviderEarnings() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawing, setWithdrawing] = useState(false);
 
+  const [payingCommission, setPayingCommission] = useState(false);
+
   useEffect(() => {
     apiService.getEarnings(period).then(r => setEarnings(r.data.data));
   }, [period]);
+
+  // Load Razorpay script
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    };
+  }, []);
+
+  const [customTopUp, setCustomTopUp] = useState('');
+
+  async function handlePayCommission(customAmt) {
+    const walletBal = earnings?.summary?.walletBalance || 0;
+    const pendingDues = earnings?.summary?.pendingCommission || Math.abs(walletBal < 0 ? walletBal : 0);
+    const payAmt = Number(customAmt) || Number(customTopUp) || pendingDues || 100;
+
+    if (!payAmt || payAmt <= 0) {
+      return toast.error('Please enter a valid amount to add');
+    }
+    setPayingCommission(true);
+    try {
+      const { data } = await apiService.createCommissionOrder({ amount: payAmt });
+      const orderData = data.data;
+
+      if (orderData.isDemo || !window.Razorpay || orderData.keyId?.includes('xxxxxxxxxxxxx') || orderData.keyId?.includes('demo')) {
+        // Instant simulated wallet top-up in development mode
+        const verifyRes = await apiService.verifyCommissionPayment({
+          razorpayOrderId: orderData.orderId,
+          razorpayPaymentId: `pay_demo_${Date.now()}`,
+          razorpaySignature: 'demo_signature',
+          amount: payAmt,
+        });
+        toast.success(verifyRes.data.message || 'Wallet top-up successful! 🎉');
+        setCustomTopUp('');
+        apiService.getEarnings(period).then(r => setEarnings(r.data.data));
+        setPayingCommission(false);
+        return;
+      }
+
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: 'ServiceHub Platform',
+        description: `Add Money to Wallet / Clear Dues (₹${payAmt})`,
+        order_id: orderData.orderId,
+        prefill: orderData.prefill,
+        theme: { color: '#2563EB' },
+        modal: { ondismiss: () => setPayingCommission(false) },
+        handler: async (response) => {
+          try {
+            const verifyRes = await apiService.verifyCommissionPayment({
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+              amount: payAmt,
+            });
+            toast.success(verifyRes.data.message || 'Wallet updated successfully! 🎉');
+            setCustomTopUp('');
+            apiService.getEarnings(period).then(r => setEarnings(r.data.data));
+          } catch (err) {
+            toast.error('Payment verification failed.');
+          } finally {
+            setPayingCommission(false);
+          }
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (resp) => {
+        toast.error(`Payment failed: ${resp.error.description}`);
+        setPayingCommission(false);
+      });
+      rzp.open();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to initiate payment');
+      setPayingCommission(false);
+    }
+  }
 
   async function handleWithdraw() {
     const amount = Number(withdrawAmount);
@@ -30,41 +116,141 @@ export default function ProviderEarnings() {
     setWithdrawing(false);
   }
 
+  const rawWalletBal = earnings?.summary?.walletBalance || 0;
+  const isNegative = rawWalletBal < 0;
+  const pendingDues = earnings?.summary?.pendingCommission || (isNegative ? Math.abs(rawWalletBal) : 0);
+  const isSuspended = rawWalletBal <= -500 || pendingDues >= 500 || earnings?.summary?.isOnHold;
+  const progressPct = Math.min(100, Math.round((pendingDues / 500) * 100));
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
-      <div className="pt-16 max-w-2xl mx-auto px-4 py-6 space-y-5">
-        <h1 className="text-2xl font-bold text-slate-900">Earnings</h1>
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+        <h1 className="text-2xl font-bold text-slate-900">Earnings & Wallet</h1>
 
-        {/* Commission Dues Warning Banner */}
-        {earnings?.summary?.pendingCommission > 0 && (
-          <div className={`rounded-2xl border-2 p-4 ${earnings.summary.isOnHold ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'}`}>
-            <div className="flex items-start gap-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${earnings.summary.isOnHold ? 'bg-red-100' : 'bg-amber-100'}`}>
-                <AlertTriangle size={20} className={earnings.summary.isOnHold ? 'text-red-600' : 'text-amber-600'} />
+        {/* 💳 PROVIDER WALLET CARD (Negative Balance in Red + Add Money Option) */}
+        <div className={`rounded-2xl border-2 p-5 shadow-sm transition-all ${
+          isNegative
+            ? isSuspended
+              ? 'bg-gradient-to-br from-red-50 via-rose-50 to-orange-50 border-red-400'
+              : 'bg-gradient-to-br from-amber-50 via-rose-50 to-orange-50 border-amber-300'
+            : 'bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border-emerald-300'
+        }`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-bold shrink-0 shadow-sm ${
+                isNegative ? (isSuspended ? 'bg-red-600 text-white' : 'bg-amber-500 text-white') : 'bg-emerald-600 text-white'
+              }`}>
+                {isNegative ? (isSuspended ? '🚫' : '⚠️') : '💼'}
               </div>
-              <div className="flex-1">
-                <p className={`font-bold text-sm ${earnings.summary.isOnHold ? 'text-red-800' : 'text-amber-800'}`}>
-                  {earnings.summary.isOnHold ? '🔴 Account On Hold — No New Jobs' : '⚠️ Platform Commission Due'}
-                </p>
-                <p className={`text-xs mt-1 ${earnings.summary.isOnHold ? 'text-red-600' : 'text-amber-600'}`}>
-                  You owe <strong>₹{earnings.summary.pendingCommission?.toLocaleString('en-IN')}</strong> in platform commission from cash jobs.
-                  {earnings.summary.isOnHold
-                    ? ' Your account is on hold. Contact admin to clear dues and resume accepting jobs.'
-                    : ' Please pay within 3 days to avoid account hold.'}
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-slate-900 text-base">
+                    {isNegative ? 'Unpaid Commission (Minus Balance)' : 'Provider Wallet'}
+                  </h3>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                    isNegative 
+                      ? (isSuspended ? 'bg-red-600 text-white animate-pulse' : 'bg-amber-200 text-amber-900')
+                      : 'bg-emerald-200 text-emerald-900'
+                  }`}>
+                    {isNegative ? (isSuspended ? '🔴 JOBS SUSPENDED' : '🔴 MINUS BALANCE') : '✓ ACTIVE'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {isNegative 
+                    ? 'When customers pay cash, platform commission is debited from your wallet. Add money to clear minus balance.' 
+                    : 'Your wallet balance is healthy. You can accept live jobs and receive payments.'}
                 </p>
               </div>
             </div>
           </div>
-        )}
 
-        {/* Commission Cleared Success */}
-        {earnings?.summary?.pendingCommission === 0 && earnings?.summary?.totalCommissionPaid > 0 && (
-          <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-3 flex items-center gap-3">
-            <CheckCircle size={18} className="text-emerald-600 shrink-0" />
-            <p className="text-sm text-emerald-700 font-medium">All platform commissions paid ✅</p>
+          {/* Balance Display */}
+          <div className="mt-4 bg-white/90 backdrop-blur-sm p-4 rounded-xl border border-slate-200/80 space-y-3">
+            <div className="flex justify-between items-end">
+              <div>
+                <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
+                  {isNegative ? 'Current Wallet Balance (Minus)' : 'Wallet Balance'}
+                </span>
+                <p className={`text-3xl font-black ${isNegative ? 'text-red-600' : 'text-emerald-600'}`}>
+                  {isNegative ? `-₹${Math.abs(rawWalletBal).toLocaleString('en-IN')}` : `+₹${rawWalletBal.toLocaleString('en-IN')}`}
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-400 font-medium">Suspension Limit</span>
+                <p className="text-sm font-bold text-slate-700">-₹500 Max</p>
+              </div>
+            </div>
+
+            {/* Threshold Progress Bar if Negative */}
+            {isNegative && (
+              <div>
+                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-500 ${isSuspended ? 'bg-red-600' : 'bg-amber-500'}`}
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-slate-500 mt-1">
+                  <span>₹0</span>
+                  <span className={isSuspended ? 'text-red-600 font-bold' : ''}>{progressPct}% minus used</span>
+                  <span>-₹500 Limit</span>
+                </div>
+              </div>
+            )}
+
+            {isSuspended && (
+              <div className="bg-red-100/80 border border-red-200 rounded-lg p-2.5 text-xs text-red-800 font-medium flex items-center gap-2">
+                <AlertTriangle size={14} className="text-red-600 shrink-0" />
+                <span>Job dispatch suspended. Clear minus balance to -₹499 or above to resume jobs immediately.</span>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Add Money Quick Amounts & Trigger */}
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">➕ Add Money to Wallet</span>
+              <span className="text-[10px] text-slate-500">PhonePe / GPay / UPI / Cards</span>
+            </div>
+
+            {/* Quick chips */}
+            <div className="flex gap-2 flex-wrap">
+              {[pendingDues > 0 ? pendingDues : null, 100, 200, 500, 1000].filter(Boolean).map(amt => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => handlePayCommission(amt)}
+                  disabled={payingCommission}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 hover:border-blue-600 hover:text-blue-600 text-slate-700 shadow-sm transition-all flex items-center gap-1"
+                >
+                  +₹{amt} {amt === pendingDues ? '(Clear Dues)' : ''}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Custom amount (e.g. ₹300)"
+                value={customTopUp}
+                onChange={e => setCustomTopUp(e.target.value)}
+                className="flex-1 px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+              <button
+                onClick={() => handlePayCommission()}
+                disabled={payingCommission}
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-md flex items-center justify-center gap-1.5 transition-all shrink-0 ${
+                  isSuspended
+                    ? 'bg-red-600 hover:bg-red-700 shadow-red-200'
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
+                } disabled:opacity-50`}
+              >
+                {payingCommission ? <Loader size={14} className="animate-spin" /> : '💳 Add Money Now'}
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 gap-3">

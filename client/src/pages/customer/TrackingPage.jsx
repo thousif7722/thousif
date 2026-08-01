@@ -22,11 +22,35 @@ function MapUpdater({ center }) {
   return null;
 }
 
+// Calculate Haversine distance between two coordinates in km and estimate travel time
+function estimateEta(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+  const R = 6371; // Earth ratio in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const dist = R * c; // Distance in km
+  
+  if (dist < 0.15) {
+    return { distance: dist, eta: 'Arrived', text: 'Arrived at your location!' };
+  }
+  // Average city speed: ~20km/h (approx 3 mins/km) + 2 minutes layout/buffer
+  const mins = Math.ceil(dist * 3 + 2);
+  return {
+    distance: dist,
+    eta: `${mins} min`,
+    text: `${dist.toFixed(1)} km away (${mins} min)`
+  };
+}
+
 export default function TrackingPage() {
   const { id } = useParams();
   const [booking, setBooking] = useState(null);
   const [providerLocation, setProviderLocation] = useState(null);
-  const [eta, setEta] = useState(null);
 
   useEffect(() => {
     apiService.getBooking(id).then(res => {
@@ -40,7 +64,6 @@ export default function TrackingPage() {
 
     const unsub = onProviderLocation((data) => {
       setProviderLocation({ lat: data.lat, lng: data.lng });
-      setEta(Math.ceil(Math.random() * 10 + 3)); // Mock ETA in minutes
     });
 
     // Poll fallback every 15s
@@ -56,14 +79,18 @@ export default function TrackingPage() {
   }, [id]);
 
   const serviceCoords = booking?.serviceAddress?.location?.coordinates;
-  const servicePosition = serviceCoords ? [serviceCoords[1], serviceCoords[0]] : [12.9716, 77.5946];
+  const servicePosition = serviceCoords ? [serviceCoords[1], serviceCoords[0]] : null;
   const providerPosition = providerLocation ? [providerLocation.lat, providerLocation.lng] : null;
-  const mapCenter = providerPosition || servicePosition;
+  const mapCenter = providerPosition || servicePosition || [12.9716, 77.5946];
+
+  const trackingInfo = providerLocation && servicePosition
+    ? estimateEta(providerLocation.lat, providerLocation.lng, servicePosition[0], servicePosition[1])
+    : null;
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col">
       <Header />
-      <div className="pt-16 flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col">
         {/* Map */}
         <div className="flex-1 relative" style={{ minHeight: '60vh' }}>
           <MapContainer center={mapCenter} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false}>
@@ -74,9 +101,11 @@ export default function TrackingPage() {
                 <Popup>Provider location</Popup>
               </Marker>
             )}
-            <Marker position={servicePosition} icon={customerIcon}>
-              <Popup>Your location</Popup>
-            </Marker>
+            {servicePosition && (
+              <Marker position={servicePosition} icon={customerIcon}>
+                <Popup>Your location</Popup>
+              </Marker>
+            )}
           </MapContainer>
 
           {/* Live badge */}
@@ -114,8 +143,11 @@ export default function TrackingPage() {
                 <p className="font-semibold text-slate-800">
                   {booking?.status === 'in_progress' ? 'Service in progress' : 'Provider is on the way'}
                 </p>
-                {eta && <p className="text-sm text-slate-500">Estimated arrival: {eta} min</p>}
-                {!providerPosition && <p className="text-sm text-slate-400">Waiting for location update…</p>}
+                {trackingInfo ? (
+                  <p className="text-sm text-slate-650 font-medium mt-0.5">{trackingInfo.text}</p>
+                ) : !providerPosition ? (
+                  <p className="text-sm text-slate-400">Waiting for provider's GPS connection…</p>
+                ) : null}
               </div>
             </div>
             <div className="text-2xl">{booking?.status === 'in_progress' ? '🔧' : '🚗'}</div>

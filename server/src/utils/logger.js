@@ -7,7 +7,15 @@ const { combine, timestamp, printf, colorize, json, errors } = winston.format;
 const logFormat = printf(({ level, message, timestamp, stack, ...meta }) => {
   let log = `${timestamp} [${level.toUpperCase()}]: ${message}`;
   if (stack) log += `\n${stack}`;
-  if (Object.keys(meta).length) log += `\n${JSON.stringify(meta, null, 2)}`;
+  if (Object.keys(meta).length) {
+    try {
+      const cleanMeta = { ...meta };
+      delete cleanMeta.session;
+      log += `\n${JSON.stringify(cleanMeta, null, 2)}`;
+    } catch (e) {
+      log += `\n[Unserializable Metadata: ${e.message}]`;
+    }
+  }
   return log;
 });
 

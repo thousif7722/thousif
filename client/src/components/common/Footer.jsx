@@ -8,6 +8,9 @@ import {
 import { apiService } from '@/services/api';
 import toast from 'react-hot-toast';
 
+import { useSelector } from 'react-redux';
+import { selectPublicSettings } from '@/store/slices/serviceSlice';
+
 const SECTIONS = [
   {
     title: 'Services',
@@ -32,6 +35,10 @@ const SECTIONS = [
 ];
 
 export default function Footer() {
+  const settings = useSelector(selectPublicSettings);
+  const siteName = settings?.siteName || 'ServiceHub';
+  const logoUrl = settings?.logoUrl;
+
   const [supportData, setSupportData] = useState({ email: '', message: '' });
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -69,7 +76,13 @@ export default function Footer() {
         <div className="space-y-6">
           <div>
             <Link to="/" className="text-2xl font-bold text-white flex items-center gap-2">
-              <span className="text-primary-400">⚡</span> ServiceHub
+              {logoUrl && logoUrl !== '/logo.png' ? (
+                <img src={logoUrl} alt={siteName} className="h-8 w-auto object-contain max-w-[160px]" />
+              ) : (
+                <>
+                  <span className="text-primary-400">⚡</span> {siteName}
+                </>
+              )}
             </Link>
             <p className="mt-4 text-sm leading-relaxed text-slate-400">
               Your one-stop destination for reliable home services. Background-verified experts delivered to your doorstep.
@@ -155,7 +168,7 @@ export default function Footer() {
            <img src="/play_store.png" alt="Play Store" className="h-8 opacity-50 grayscale hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer" onError={e => e.target.style.display='none'} />
         </div>
         <p className="text-xs text-slate-600">
-          © {new Date().getFullYear()} ServiceHub. All rights reserved.
+          © {new Date().getFullYear()} {siteName}. All rights reserved.
         </p>
       </div>
 

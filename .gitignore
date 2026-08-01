@@ -38,3 +38,9 @@ out/
 # OS Files
 thumbs.db
 desktop.ini
+
+# Local DB & Temp Files
+mongo-local-data/
+.agent/
+client/refactor.js
+

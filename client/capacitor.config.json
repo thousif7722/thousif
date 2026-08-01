@@ -1,0 +1,5 @@
+{
+  "appId": "com.servicehub.app",
+  "appName": "ServiceHub",
+  "webDir": "dist"
+}

@@ -99,13 +99,26 @@ function initSocket(httpServer) {
         providerId: userId,
       };
 
-      // Cache provider location (30 second TTL)
+      // Cache provider location (30 second TTL — polling fallback)
       await cache.set(`provider_location:${userId}`, locationData, 30);
 
-      // Store location breadcrumb trail for customer map (last 10 points)
-      const { getRedisClient } = require('../config/redis');
       const client = getRedisClient();
       if (client) {
+        // ── FIX 2: GEOADD — puts provider into the Redis GEO index for fast GEOSEARCH ──
+        // This is the key that makes booking.service.js GEOSEARCH work instead of MongoDB $near
+        try {
+          await client.geoAdd('providers_online', {
+            longitude: lng,
+            latitude: lat,
+            member: userId,
+          });
+          // 15s TTL presence key — auto-expires if provider's GPS goes silent = auto-offline
+          await client.setEx(`provider_online:${userId}`, 15, '1');
+        } catch (geoErr) {
+          logger.warn(`[GEO] GEOADD failed for provider ${userId}:`, geoErr.message);
+        }
+
+        // Store breadcrumb trail for customer map (last 10 points)
         const trailKey = `loc_trail:${userId}`;
         try {
           await client.rPush(trailKey, JSON.stringify({ lat, lng, ts: Date.now() }));
@@ -114,16 +127,16 @@ function initSocket(httpServer) {
         } catch (e) { /* ignore trail errors */ }
       }
 
-      // Update provider location in DB (debounced — every 10 updates)
+      // Update provider location in DB immediately on 1st ping and periodically every 30 pings
       const updateCount = await cache.increment(`loc_update_count:${userId}`, 60);
-      if (updateCount % 10 === 0) {
+      if (updateCount === 1 || updateCount % 30 === 0) {
         Provider.findByIdAndUpdate(userId, {
           'currentLocation.coordinates': [lng, lat],
           'currentLocation.updatedAt': new Date(),
         }).catch(() => {});
       }
 
-      // Broadcast to customer tracking this provider
+      // Broadcast to customer tracking this provider (active booking)
       const activeBooking = await cache.get(`active_booking:provider:${userId}`);
       if (activeBooking?.customerId) {
         io.to(`user:${activeBooking.customerId}`).emit('provider:location', locationData);
@@ -138,6 +151,10 @@ function initSocket(httpServer) {
       await Provider.findByIdAndUpdate(userId, { isOnline: !!isOnline });
       socket.emit('provider:availability_updated', { isOnline });
       logger.debug(`Provider ${userId} is now ${isOnline ? 'online' : 'offline'}`);
+      if (isOnline) {
+        const { matchPendingBookingsForOnlineProvider } = require('../modules/booking/booking.service');
+        matchPendingBookingsForOnlineProvider(userId).catch(() => {});
+      }
     });
 
     /**
@@ -147,6 +164,63 @@ function initSocket(httpServer) {
       if (userRole !== 'provider') return;
       // Record that provider saw the request (for analytics)
       await cache.set(`booking_seen:${bookingId}:${userId}`, '1', 300);
+    });
+
+    // ── FIX 4: Real-time nearby providers map (Rapido-style) ───────────────────
+    /**
+     * Customer requests live list of available providers nearby.
+     * Reads directly from the Redis GEO index (populated by FIX 2 GEOADD).
+     * Returns provider pins within 5km — no MongoDB involved, ~1ms.
+     * Data: { lat, lng, radiusKm? }
+     */
+    socket.on('customer:get_nearby_providers', async (data) => {
+      if (userRole !== 'customer') return;
+
+      const cLat = parseFloat(data?.lat);
+      const cLng = parseFloat(data?.lng);
+      if (isNaN(cLat) || isNaN(cLng)) return;
+
+      const radiusKm = Math.min(parseFloat(data?.radiusKm) || 5, 20); // max 20km cap
+
+      const client = getRedisClient();
+      if (!client) {
+        return socket.emit('nearby:providers', { providers: [], source: 'unavailable' });
+      }
+
+      try {
+        // GEOSEARCH from Redis GEO index — all providers who sent a GPS ping in last 15s
+        const geoResults = await client.geoSearch(
+          'providers_online',
+          { longitude: cLng, latitude: cLat },
+          { radius: radiusKm, unit: 'km' },
+          { SORT: 'ASC', COUNT: 30, WITHDIST: true, WITHCOORD: true }
+        );
+
+        // Filter: only send providers who are truly online (presence key alive)
+        const liveProviders = await Promise.all(
+          geoResults.map(async (r) => {
+            const isOnline = await client.exists(`provider_online:${r.member}`);
+            const isBusy = await client.exists(`provider:busy:${r.member}`);
+            if (!isOnline) return null; // GPS went silent > 15s ago
+            return {
+              id: r.member,
+              distanceKm: parseFloat(parseFloat(r.distance).toFixed(1)),
+              lat: r.coordinates?.latitude,
+              lng: r.coordinates?.longitude,
+              busy: isBusy > 0, // Show busy ones dimmed on map, filter in accept
+            };
+          })
+        );
+
+        socket.emit('nearby:providers', {
+          providers: liveProviders.filter(Boolean),
+          radiusKm,
+          source: 'redis_geo',
+        });
+      } catch (err) {
+        logger.warn('[NearbyProviders] Redis GEOSEARCH failed:', err.message);
+        socket.emit('nearby:providers', { providers: [], source: 'error' });
+      }
     });
 
     // ── Chat Events ──────────────────────────────────────────────────────────────
@@ -246,14 +320,10 @@ function initSocket(httpServer) {
     socket.on('disconnect', async (reason) => {
       logger.debug(`Socket disconnected: ${userId} - ${reason}`);
       if (userRole === 'provider') {
-        // Mark offline after 30s grace period (handle page refresh)
-        setTimeout(async () => {
-          const sockets = await io.in(`provider:${userId}`).fetchSockets();
-          if (sockets.length === 0) {
-            await Provider.findByIdAndUpdate(userId, { isOnline: false }).catch(() => {});
-            logger.debug(`Provider ${userId} marked offline`);
-          }
-        }, 30000);
+        const client = getRedisClient();
+        if (client) {
+          await client.del(`provider_online:${userId}`).catch(() => {});
+        }
       }
     });
 
@@ -286,10 +356,50 @@ function initSocket(httpServer) {
 }
 
 async function handleProviderConnect(socket) {
-  // Send any pending booking requests
-  const pendingBooking = await cache.get(`pending_booking:provider:${socket.userId}`);
-  if (pendingBooking) {
-    socket.emit('booking:new_request', pendingBooking);
+  // 1. Check Redis cache first for pending booking request
+  let pendingBooking = await cache.get(`pending_booking:provider:${socket.userId}`);
+  
+  if (!pendingBooking) {
+    // 2. Fallback: Check MongoDB for any assigned job awaiting acceptance
+    try {
+      const { Booking } = require('../models');
+      const assignedJob = await Booking.findOne({
+        providerId: socket.userId,
+        status: 'assigned',
+      }).populate('serviceId', 'name category icon basePrice').lean();
+
+      if (assignedJob) {
+        pendingBooking = {
+          bookingId: assignedJob._id,
+          bookingNumber: assignedJob.bookingNumber,
+          service: assignedJob.serviceId,
+          scheduledDate: assignedJob.scheduledDate,
+          timeSlot: assignedJob.timeSlot,
+          address: {
+            city: assignedJob.serviceAddress?.city,
+            area: assignedJob.serviceAddress?.line1 || assignedJob.serviceAddress?.area,
+          },
+          distanceKm: 5,
+          estimatedEarnings: assignedJob.providerEarnings,
+          acceptTimeoutSeconds: 120,
+        };
+        await cache.set(`pending_booking:provider:${socket.userId}`, pendingBooking, 120);
+      }
+    } catch (err) {
+      logger.warn('[SocketConnect] Error checking assigned jobs for provider:', err.message);
+    }
+  }
+
+  if (pendingBooking && pendingBooking.bookingId) {
+    // Prevent duplicate popups & sirens if provider already saw this request during page navigation
+    const isAlreadySeen = await cache.get(`seen_booking:${socket.userId}:${pendingBooking.bookingId}`);
+    if (!isAlreadySeen) {
+      await cache.set(`seen_booking:${socket.userId}:${pendingBooking.bookingId}`, true, 300);
+      socket.emit('booking:new_request', pendingBooking);
+      logger.info(`📢 Provider ${socket.userId} connected — popped initial booking ${pendingBooking.bookingNumber}`);
+    } else {
+      logger.info(`⏩ Provider ${socket.userId} connected — booking ${pendingBooking.bookingNumber} already seen, suppressing duplicate popup.`);
+    }
   }
 }
 
