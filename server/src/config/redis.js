@@ -19,6 +19,7 @@ function cleanExpired(key) {
 /**
  * Configure and connect Redis client & subscriber for AWS ElastiCache Serverless & standard Redis.
  * Reads Redis connection strictly from process.env.REDIS_URL.
+ * Fully bulletproof: Unreachable Redis will NEVER crash the server.
  */
 async function connectRedis() {
   const redisUrl = process.env.REDIS_URL;
@@ -39,16 +40,14 @@ async function connectRedis() {
   const clientOptions = {
     url: redisUrl,
     socket: {
-      connectTimeout: 10000, // 10s connection timeout
-      keepAlive: 5000,       // Keep TCP connection alive for AWS ElastiCache
+      connectTimeout: 5000, // 5s connection timeout for fast failover
+      keepAlive: 5000,      // Keep TCP connection alive for AWS ElastiCache
       reconnectStrategy: (retries) => {
-        if (retries > 10) {
-          logger.error('Redis: Maximum reconnect attempts reached.');
-          return new Error('Max reconnect retries reached');
+        if (retries > 3) {
+          logger.warn('Redis: Max reconnect attempts reached. Stopping reconnect.');
+          return false; // MUST return false so node-redis stops cleanly without throwing uncaught errors
         }
-        const delay = Math.min(retries * 500, 5000);
-        logger.warn(`Redis reconnecting in ${delay}ms (attempt ${retries})`);
-        return delay;
+        return Math.min(retries * 500, 2000);
       },
       ...(isTls && {
         tls: true,
@@ -63,20 +62,35 @@ async function connectRedis() {
     redisClient = createClient(clientOptions);
     redisSubscriber = createClient(clientOptions);
 
+    // CRITICAL: Attach error listeners IMMEDIATELY to prevent unhandled EventEmitter errors from crashing Node
+    redisClient.on('error', (err) => logger.warn('⚠️ Redis client warning/error:', err.message));
+    redisSubscriber.on('error', (err) => logger.warn('⚠️ Redis subscriber warning/error:', err.message));
+
     redisClient.on('ready', () => logger.info('✅ Redis client ready'));
     redisClient.on('connect', () => logger.info('⚡ Redis client connecting...'));
     redisClient.on('reconnecting', () => logger.warn('🔄 Redis client reconnecting...'));
-    redisClient.on('error', (err) => logger.error('❌ Redis client error:', err.message));
 
     redisSubscriber.on('ready', () => logger.info('✅ Redis subscriber ready'));
     redisSubscriber.on('connect', () => logger.info('⚡ Redis subscriber connecting...'));
     redisSubscriber.on('reconnecting', () => logger.warn('🔄 Redis subscriber reconnecting...'));
-    redisSubscriber.on('error', (err) => logger.error('❌ Redis subscriber error:', err.message));
 
-    await Promise.all([redisClient.connect(), redisSubscriber.connect()]);
+    await Promise.all([
+      redisClient.connect().catch((err) => logger.warn('Redis client connect attempt failed:', err.message)),
+      redisSubscriber.connect().catch((err) => logger.warn('Redis subscriber connect attempt failed:', err.message)),
+    ]);
+
+    if (!redisClient.isReady || !redisSubscriber.isReady) {
+      logger.warn('⚠️ Redis connection could not be established. Operating in graceful in-memory fallback mode.');
+      try { if (redisClient?.isOpen) await redisClient.quit(); } catch {}
+      try { if (redisSubscriber?.isOpen) await redisSubscriber.quit(); } catch {}
+      redisClient = null;
+      redisSubscriber = null;
+      return null;
+    }
+
     return redisClient;
   } catch (error) {
-    logger.warn('⚠️ Redis connection failed. Operating in graceful in-memory fallback mode.', error.message);
+    logger.warn('⚠️ Redis initialization error. Operating in graceful in-memory fallback mode:', error.message);
     try { if (redisClient?.isOpen) await redisClient.quit(); } catch {}
     try { if (redisSubscriber?.isOpen) await redisSubscriber.quit(); } catch {}
     redisClient = null;
@@ -112,7 +126,7 @@ const cache = {
       const data = await client.get(key);
       return data ? JSON.parse(data) : null;
     } catch (err) {
-      logger.error('Redis GET error:', err.message);
+      logger.warn('Redis GET error (falling back to memory):', err.message);
       cleanExpired(key);
       const data = memoryCache.get(key);
       return data !== undefined ? JSON.parse(data) : null;
@@ -132,7 +146,7 @@ const cache = {
       await client.setEx(key, ttlSeconds, JSON.stringify(value));
       return true;
     } catch (err) {
-      logger.error('Redis SET error:', err.message);
+      logger.warn('Redis SET error (falling back to memory):', err.message);
       memoryCache.set(key, JSON.stringify(value));
       if (ttlSeconds > 0) {
         memoryExpirations.set(key, Date.now() + ttlSeconds * 1000);
@@ -152,7 +166,7 @@ const cache = {
       await client.del(key);
       return true;
     } catch (err) {
-      logger.error('Redis DEL error:', err.message);
+      logger.warn('Redis DEL error (falling back to memory):', err.message);
       memoryCache.delete(key);
       memoryExpirations.delete(key);
       return false;
@@ -186,7 +200,7 @@ const cache = {
         }
       }
     } catch (err) {
-      logger.error('Redis DEL pattern error:', err.message);
+      logger.warn('Redis DEL pattern error:', err.message);
     }
   },
 
@@ -210,7 +224,7 @@ const cache = {
       }
       return val;
     } catch (err) {
-      logger.error('Redis INCR error:', err.message);
+      logger.warn('Redis INCR error (falling back to memory):', err.message);
       cleanExpired(key);
       const currentData = memoryCache.get(key);
       let val = currentData !== undefined ? JSON.parse(currentData) : 0;
@@ -236,7 +250,7 @@ const cache = {
       await client.hSet(key, field, JSON.stringify(value));
       return true;
     } catch (err) {
-      logger.error('Redis HSET error:', err.message);
+      logger.warn('Redis HSET error (falling back to memory):', err.message);
       let hash = memoryCache.get(key);
       hash = hash !== undefined ? JSON.parse(hash) : {};
       hash[field] = value;
@@ -257,7 +271,7 @@ const cache = {
       const data = await client.hGet(key, field);
       return data ? JSON.parse(data) : null;
     } catch (err) {
-      logger.error('Redis HGET error:', err.message);
+      logger.warn('Redis HGET error (falling back to memory):', err.message);
       const hash = memoryCache.get(key);
       if (hash === undefined) return null;
       const parsed = JSON.parse(hash);
@@ -283,7 +297,7 @@ const cache = {
       });
       return result === 'OK';
     } catch (err) {
-      logger.error('Redis SETNX error:', err.message);
+      logger.warn('Redis SETNX error (falling back to memory):', err.message);
       cleanExpired(key);
       if (memoryCache.has(key)) return false;
       memoryCache.set(key, JSON.stringify(value));
