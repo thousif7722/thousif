@@ -6,7 +6,7 @@ import { StatusBadge, EmptyState } from '@/components/common/UI';
 import {
   CheckCircle, XCircle, MapPin, Clock, DollarSign,
   Wrench, CheckCircle2, X, ChevronRight, AlertCircle,
-  Banknote, CreditCard, Hourglass, IndianRupee, Navigation, Map
+  Banknote, CreditCard, Hourglass, IndianRupee, Navigation, Map, PhoneCall
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -688,9 +688,9 @@ export default function ProviderBookings() {
                         <div className="flex items-center gap-1"><Clock size={10} />{dayjs(b.scheduledDate).format('D MMM · h:mm A')}</div>
                         <div className="flex items-center gap-1"><MapPin size={10} />{b.serviceAddress?.city}</div>
                       </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="font-bold text-green-600 text-sm">₹{b.providerEarnings?.toLocaleString('en-IN') || 0} earnings</span>
-                        <div className="flex gap-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-2 gap-2">
+                        <span className="font-bold text-green-600 text-sm whitespace-nowrap">₹{b.providerEarnings?.toLocaleString('en-IN') || 0} earnings</span>
+                        <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
                           {/* Navigation & Map Buttons */}
                           {b.serviceAddress?.location?.coordinates && (
                             <>
@@ -718,25 +718,41 @@ export default function ProviderBookings() {
                             </>
                           )}
                           
-                          {b.status === 'assigned' && (
+                          {b.status === 'accepted' && (
                             <>
-                              <button onClick={() => handleReject(b._id)} className="border-2 border-red-200 text-red-600 font-semibold rounded-xl py-1.5 px-3 hover:bg-red-50 text-xs flex items-center gap-1">
-                                <XCircle size={13} /> Decline
-                              </button>
-                              <button onClick={() => handleAccept(b._id)} className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1">
-                                <CheckCircle size={13} /> Accept
+                              {b.customerId?.phone && (
+                                <a href={`tel:${b.customerId.phone}`} className="border border-primary-200 text-primary-600 font-semibold rounded-lg py-1.5 px-2.5 hover:bg-primary-50 text-xs flex items-center gap-1">
+                                  <PhoneCall size={13} /> Call
+                                </a>
+                              )}
+                              <button onClick={() => handleStartJob(b._id)} className="btn-primary text-xs py-1.5 px-2.5 flex items-center gap-1">
+                                  <Wrench size={13} /> Start
                               </button>
                             </>
-                          )}
-                          {b.status === 'accepted' && (
-                            <button onClick={() => handleStartJob(b._id)} className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1">
-                                <Wrench size={13} /> Start Job
-                            </button>
                           )}
                         </div>
                       </div>
                     </div>
                   </div>
+
+                  {/* 🆕 MASSIVE ACCEPT / DECLINE ACTIONS FOR NEW JOBS */}
+                  {b.status === 'assigned' && (
+                    <div className="mt-4 flex flex-col gap-2 pt-3 border-t border-slate-100">
+                      <button 
+                        onClick={() => handleAccept(b._id)} 
+                        className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-extrabold text-base text-white shadow-lg active:scale-95 transition-all"
+                        style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', boxShadow: '0 4px 15px rgba(79,70,229,0.3)' }}
+                      >
+                        <CheckCircle size={20} /> ACCEPT JOB NOW
+                      </button>
+                      <button 
+                        onClick={() => handleReject(b._id)} 
+                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm text-red-500 bg-red-50 border border-red-100 hover:bg-red-100 active:scale-95 transition-all"
+                      >
+                        <XCircle size={16} /> Decline Request
+                      </button>
+                    </div>
+                  )}
 
                   {/* 🔍 ON-SITE QUOTATION / EXTRA ISSUES BUTTON */}
                   {['accepted', 'in_progress'].includes(b.status) && (

@@ -39,16 +39,19 @@ export default function ServiceDetail() {
       <div className="pt-0">
 
         {/* ── Full-Screen Hero Image ── */}
-        <div className="relative w-full h-64 sm:h-80 overflow-hidden">
-          {/* Category background image */}
+        <div className="relative w-full h-64 sm:h-80 overflow-hidden bg-slate-900">
+          {/* Main Service Banner Image (Dynamically added from Admin Panel, or fallback to beautiful placeholder) */}
           <img
-            src={`/cat_${service.category?.toLowerCase().replace(/\s+/g, '_').replace(/&/g, '')}.png`}
+            src={service.image || `/cat_${service.category?.toLowerCase().replace(/\s+/g, '_').replace(/&/g, '')}.png`}
             alt={service.name}
-            className="w-full h-full object-cover"
-            onError={e => { e.target.style.display = 'none'; }}
+            className="w-full h-full object-cover opacity-80"
+            onError={e => { 
+              e.target.onerror = null; 
+              e.target.src = 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&q=80&w=1000'; 
+            }}
           />
           {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/30" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/50 to-slate-900/10" />
 
           {/* Back button */}
           <Link

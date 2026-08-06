@@ -90,20 +90,13 @@ function ServiceAreaCard({ initialRadius = 10 }) {
   const cfg = gpsStatusConfig[gpsStatus];
 
   return (
-    <div className="card p-5 space-y-4">
-      {/* Card header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
-            <Crosshair size={16} className="text-indigo-600" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-slate-800 text-sm">Service Area</h3>
-            <p className="text-xs text-slate-400">Jobs within your radius</p>
-          </div>
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 justify-between">
+        <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+          <MapPin size={16} className="text-primary-600" /> Auto-Receive Jobs in Area
+        </h3>
         {/* GPS Status pill */}
-        <span className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.color}`}>
+        <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
           {cfg.label}
         </span>
@@ -305,43 +298,49 @@ export default function ProviderDashboard() {
           )
         )}
 
-        {/* Profile + Online toggle */}
+        {/* Profile + Online toggle + Integrated Service Radius */}
         <div className="card p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-xl relative">
-                {profile?.name?.[0]}
-                <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${profile?.isOnline ? 'bg-green-500' : 'bg-slate-400'}`} />
+          <div className="flex justify-between items-start">
+            <div className="flex items-center gap-3">
+              <div className="w-[60px] h-[60px] rounded-2xl bg-primary-100 flex items-center justify-center text-primary-700 font-extrabold text-2xl relative shadow-inner overflow-hidden border border-primary-200">
+                {profile?.image ? <img src={profile.image} className="w-full h-full object-cover" /> : profile?.name?.[0]}
+                <div className={`absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full border-2 border-white shadow-sm ${profile?.isOnline ? 'bg-green-500' : 'bg-slate-400'}`} />
               </div>
               <div>
-                <h2 className="font-bold text-slate-900">{profile?.name}</h2>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
+                <h2 className="font-extrabold text-slate-900 border-b border-transparent text-lg">{profile?.name}</h2>
+                <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                   <Star size={13} className="text-amber-400 fill-amber-400" />
-                  <span>{profile?.rating?.toFixed(1)} · {profile?.completedJobs} jobs</span>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${
-                    { gold: 'bg-yellow-100 text-yellow-700', silver: 'bg-slate-100 text-slate-600', bronze: 'bg-orange-100 text-orange-700' }[profile?.tier]
-                  }`}>{profile?.tier}</span>
+                  <span className="font-bold text-slate-700">{profile?.rating?.toFixed(1)}</span>
+                  <span>· {profile?.completedJobs} jobs</span>
+                  <span className="bg-slate-100 px-1.5 py-0.5 rounded capitalize">{profile?.tier}</span>
                 </div>
               </div>
             </div>
 
             {!approvalPending && (
-              <button
-                onClick={handleToggleOnline}
-                disabled={toggling}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                  profile?.isOnline ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-600'
-                } ${toggling ? 'opacity-50' : ''}`}
-              >
-                {profile?.isOnline ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-                {profile?.isOnline ? 'Online' : 'Offline'}
-              </button>
+               <button
+                 onClick={handleToggleOnline}
+                 disabled={toggling}
+                 className={`flex flex-col items-center justify-center w-[60px] h-[60px] rounded-2xl font-bold text-[10px] transition-all shadow-sm border ${
+                   profile?.isOnline ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-emerald-100/50' : 'bg-slate-50 text-slate-500 border-slate-200'
+                 } ${toggling ? 'opacity-50 gap-0' : 'gap-0.5'}`}
+               >
+                 {profile?.isOnline ? <ToggleRight size={22} className="text-emerald-600" /> : <ToggleLeft size={22} />}
+                 {profile?.isOnline ? 'ONLINE' : 'OFFLINE'}
+               </button>
             )}
           </div>
+          
+          {/* Integrated Radius Config (Only visible when Online) */}
+          {!approvalPending && profile?.isOnline && (
+            <div className="mt-5 pt-4 border-t border-slate-100">
+              <ServiceAreaCard initialRadius={profile?.serviceRadius || 10} />
+            </div>
+          )}
         </div>
 
         {/* ── Rapido-style Duty Zone Map (visible only when Online) ── */}
-        {!approvalPending && (
+        {!approvalPending && profile?.isOnline && (
           <DutyZoneMap
             isOnline={!!profile?.isOnline}
             radiusKm={profile?.serviceRadius || 10}
@@ -356,11 +355,6 @@ export default function ProviderDashboard() {
               } : p);
             }}
           />
-        )}
-
-        {/* ── Service Area Card (GPS + Radius) ── */}
-        {!approvalPending && (
-          <ServiceAreaCard initialRadius={profile?.serviceRadius || 10} />
         )}
 
         {/* Quick stats */}

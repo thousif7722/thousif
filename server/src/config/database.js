@@ -1,30 +1,27 @@
 'use strict';
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
-
-const MONGODB_URI = process.env.MONGODB_URI;
-
 const config = require('./scalability.config');
 
-// FIX #7: Scale DB pool for high-concurrency (100 crore users)
-const IS_PROD = process.env.NODE_ENV === 'production';
-const MONGOOSE_OPTIONS = {
-  maxPoolSize: config.db.maxPoolSize,
-  minPoolSize: config.db.minPoolSize,
-  socketTimeoutMS: 45000,
-  serverSelectionTimeoutMS: 10000,
-  heartbeatFrequencyMS: config.db.heartbeatFrequencyMS,
-  retryWrites: true,
-  directConnection: true,
-};
-
 let retryCount = 0;
-const MAX_RETRIES = IS_PROD ? 5 : 1; // More retries in prod, fail fast in dev
+const MAX_RETRIES = 5;
 
 async function connectDB() {
-  if (!MONGODB_URI) {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
     throw new Error('MONGODB_URI environment variable is not set');
   }
+
+  const isAtlas = uri.startsWith('mongodb+srv://');
+  const MONGOOSE_OPTIONS = {
+    maxPoolSize: config.db.maxPoolSize,
+    minPoolSize: config.db.minPoolSize,
+    socketTimeoutMS: 45000,
+    serverSelectionTimeoutMS: 10000,
+    heartbeatFrequencyMS: config.db.heartbeatFrequencyMS,
+    retryWrites: true,
+    ...(!isAtlas && { directConnection: true }),
+  };
 
   mongoose.set('strictQuery', true);
 
@@ -47,12 +44,12 @@ async function connectDB() {
   });
 
   // ── Connect with retry ─────────────────────────────────────────────────────
-  return attemptConnection();
+  return attemptConnection(uri, MONGOOSE_OPTIONS);
 }
 
-async function attemptConnection() {
+async function attemptConnection(uri, options) {
   try {
-    await mongoose.connect(MONGODB_URI, MONGOOSE_OPTIONS);
+    await mongoose.connect(uri, options);
     await ensureIndexes();
   } catch (error) {
     retryCount++;
@@ -60,7 +57,7 @@ async function attemptConnection() {
       const delay = Math.min(1000 * 2 ** retryCount, 30000); // Exponential backoff, max 30s
       logger.warn(`MongoDB connection failed. Retry ${retryCount}/${MAX_RETRIES} in ${delay}ms`);
       await sleep(delay);
-      return attemptConnection();
+      return attemptConnection(uri, options);
     }
     throw new Error(`MongoDB connection failed after ${MAX_RETRIES} retries: ${error.message}`);
   }
