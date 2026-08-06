@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=4096 && vite --host",
     "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint src --ext .jsx,.js"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

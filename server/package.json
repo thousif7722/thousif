@@ -7,8 +7,7 @@
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "seed": "node src/utils/seed.js",
-    "test": "jest --runInBand",
-    "lint": "eslint src/ --ext .js"
+    "test": "jest --runInBand"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.490.0",
