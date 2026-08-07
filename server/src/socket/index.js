@@ -124,7 +124,9 @@ function initSocket(httpServer) {
           await client.rPush(trailKey, JSON.stringify({ lat, lng, ts: Date.now() }));
           await client.lTrim(trailKey, -10, -1);
           await client.expire(trailKey, 3600);
-        } catch (e) { /* ignore trail errors */ }
+        } catch (trailErr) {
+          logger.warn(`[LocTrail] Redis trail update failed for provider ${userId}:`, trailErr.message);
+        }
       }
 
       // Update provider location in DB immediately on 1st ping and periodically every 30 pings
@@ -196,21 +198,23 @@ function initSocket(httpServer) {
           { SORT: 'ASC', COUNT: 30, WITHDIST: true, WITHCOORD: true }
         );
 
-        // Filter: only send providers who are truly online (presence key alive)
-        const liveProviders = await Promise.all(
-          geoResults.map(async (r) => {
+        // FIX: In Redis Cluster mode, Promise.all with multiple different keys
+        // inside a single pipeline can cause CROSSSLOT. Check each key sequentially.
+        const liveProviders = [];
+        for (const r of geoResults) {
+          try {
             const isOnline = await client.exists(`provider_online:${r.member}`);
+            if (!isOnline) continue;
             const isBusy = await client.exists(`provider:busy:${r.member}`);
-            if (!isOnline) return null; // GPS went silent > 15s ago
-            return {
+            liveProviders.push({
               id: r.member,
               distanceKm: parseFloat(parseFloat(r.distance).toFixed(1)),
               lat: r.coordinates?.latitude,
               lng: r.coordinates?.longitude,
-              busy: isBusy > 0, // Show busy ones dimmed on map, filter in accept
-            };
-          })
-        );
+              busy: isBusy > 0,
+            });
+          } catch (e) { /* skip this provider on error */ }
+        }
 
         socket.emit('nearby:providers', {
           providers: liveProviders.filter(Boolean),

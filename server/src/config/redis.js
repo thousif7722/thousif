@@ -194,10 +194,11 @@ const cache = {
         keysToDelete.push(...reply.keys);
       } while (cursor !== 0);
 
-      if (keysToDelete.length > 0) {
-        for (let i = 0; i < keysToDelete.length; i += 500) {
-          await client.del(keysToDelete.slice(i, i + 500));
-        }
+      // FIX: In Redis Cluster (ElastiCache Serverless), DEL with multiple keys
+      // that hash to different slots throws CROSSSLOT error.
+      // Solution: delete each key individually — always cluster-safe.
+      for (const key of keysToDelete) {
+        await client.del(key).catch(() => {});
       }
     } catch (err) {
       logger.warn('Redis DEL pattern error:', err.message);
