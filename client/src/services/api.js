@@ -208,6 +208,7 @@ export const apiService = {
   rejectBank: (id) => api.put(`/admin/providers/${id}/bank/reject`),
   getAdminBookings: (params) => api.get('/admin/bookings', { params }),
   assignBooking: (id, providerId) => api.put(`/admin/bookings/${id}/assign`, { providerId }),
+  forceCompleteBooking: (id, reason) => api.put(`/admin/bookings/${id}/force-complete`, { reason }),
   getFinancials: (params) => api.get('/admin/financials', { params }),
   getAdminPayouts: (params) => api.get('/admin/payouts', { params }),
   settlePayout: (id, data) => api.put(`/admin/payouts/${id}/settle`, data),

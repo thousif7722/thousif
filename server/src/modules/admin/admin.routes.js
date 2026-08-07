@@ -776,7 +776,91 @@ router.put('/bookings/:id/assign', requirePermission('manage_bookings'), async (
   res.json({ success: true, message: `Booking assigned to ${provider.name}`, data: populated });
 });
 
+/**
+ * PUT /admin/bookings/:id/force-complete
+ * Admin overrides and force-marks a stuck/overdue booking as completed.
+ * Works regardless of current status (assigned, accepted, in_progress).
+ */
+router.put('/bookings/:id/force-complete', requirePermission('manage_bookings'), async (req, res) => {
+  const { reason } = req.body;
+
+  const booking = await Booking.findById(req.params.id)
+    .populate('customerId', 'name phone')
+    .populate('providerId', 'name phone rating');
+
+  if (!booking) throw new AppError('Booking not found', 404);
+
+  const terminalStatuses = ['completed', 'paid', 'cancelled'];
+  if (terminalStatuses.includes(booking.status)) {
+    throw new AppError(`Booking is already ${booking.status} — no override needed`, 400);
+  }
+
+  const previousStatus = booking.status;
+
+  booking.status = 'completed';
+  booking.workDetails.completedAt = new Date();
+  booking.timeline.push({
+    status: 'completed',
+    note: `Admin force-completed (was: ${previousStatus}). Reason: ${reason || 'SLA override by admin'}`,
+    timestamp: new Date(),
+  });
+
+  // Issue warranty if not already set
+  if (!booking.warranty?.warrantyId) {
+    const ts = Date.now().toString(36).toUpperCase();
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    booking.warranty = {
+      warrantyId: `SH-WRN-${ts}-${rand}`,
+      issuedAt: new Date(),
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      status: 'active',
+      terms: '30-Day Free Revisit Guarantee covering all labor & service work.',
+    };
+  }
+
+  await booking.save();
+
+  // Update provider's completed job count
+  if (booking.providerId?._id) {
+    await Provider.findByIdAndUpdate(booking.providerId._id, {
+      $inc: { completedJobs: 1 },
+    });
+  }
+
+  // Clear Redis busy and active-booking cache
+  if (booking.providerId?._id) {
+    await cache.del(`provider:busy:${booking.providerId._id}`);
+    await cache.del(`active_booking:provider:${booking.providerId._id}`);
+  }
+  await cache.del(`booking:${booking._id}`);
+
+  // Notify customer
+  const io = getIO();
+  if (io) {
+    io.to(`user:${booking.customerId}`).emit('booking:completed', {
+      bookingId: booking._id,
+      totalAmount: booking.totalAmount,
+      message: 'Your service has been marked as completed by admin.',
+    });
+  }
+
+  logger.info(`Admin ${req.userId} force-completed booking ${booking.bookingNumber} (was: ${previousStatus}). Reason: ${reason || 'SLA override'}`);
+
+  res.json({
+    success: true,
+    message: `Booking #${booking.bookingNumber} marked as completed`,
+    data: {
+      bookingId: booking._id,
+      bookingNumber: booking.bookingNumber,
+      previousStatus,
+      status: 'completed',
+      completedAt: booking.workDetails.completedAt,
+    },
+  });
+});
+
 // ── Complaints Management ──────────────────────────────────────────────────────
+
 router.get('/complaints', requirePermission('manage_complaints'), async (req, res) => {
   const { page = 1, limit = 20, status, severity } = req.query;
   const filter = {};

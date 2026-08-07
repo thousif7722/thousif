@@ -281,8 +281,12 @@ function AssignModal({ booking, onClose, onAssigned }) {
 
 
 // Helper: Compute SLA Completion Delay Status (Day 1, Day 2, Day 3, Day 3+ OVERDUE)
+// Returns null for any booking that is already in a terminal state (completed/paid/cancelled)
 function getSlaStatus(booking, slaThresholdDays = 3) {
-  if (!booking || ['completed', 'paid', 'cancelled'].includes(booking.status)) return null;
+  if (!booking) return null;
+  const terminalStatuses = ['completed', 'paid', 'cancelled', 'canceled'];
+  // KEY FIX: If the job reached a terminal status, SLA counter is done — show completed
+  if (terminalStatuses.includes((booking.status || '').toLowerCase())) return null;
 
   const startDate = dayjs(booking.createdAt || booking.scheduledDate);
   const elapsedHours = dayjs().diff(startDate, 'hour');
@@ -325,6 +329,24 @@ export default function AdminBookings() {
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({});
   const [assignTarget, setAssignTarget] = useState(null); // booking to assign
+  const [forcingComplete, setForcingComplete] = useState(null); // bookingId being force-completed
+
+  async function handleForceComplete(booking) {
+    const reason = window.prompt(
+      `Force-complete booking #${booking.bookingNumber}?\n\nThis was assigned ${dayjs().diff(dayjs(booking.createdAt), 'day')} days ago and is stuck at "${booking.status}".\n\nEnter reason (optional):`,
+      'SLA overdue — admin completing on behalf of provider'
+    );
+    if (reason === null) return; // cancelled
+    setForcingComplete(booking._id);
+    try {
+      await apiService.forceCompleteBooking(booking._id, reason || 'SLA override by admin');
+      toast.success(`✅ Booking #${booking.bookingNumber} marked as Completed!`);
+      load(); // Refresh table
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Force complete failed');
+    }
+    setForcingComplete(null);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -590,21 +612,35 @@ export default function AdminBookings() {
                           )}
                         </td>
                         <td className="px-5 py-3.5 text-right">
-                          {!['completed', 'paid', 'cancelled', 'canceled'].includes((b.status || '').toLowerCase()) && (
-                            <button
-                              onClick={() => setAssignTarget(b)}
-                              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all ml-auto ${
-                                !b.providerId
-                                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-200 animate-pulse border border-red-500 ring-2 ring-red-300'
-                                  : sla?.isOverdue
-                                    ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-200'
-                                    : 'bg-primary-600 hover:bg-primary-700 text-white shadow-sm hover:shadow-md'
-                              }`}
-                            >
-                              <UserCheck size={13} />
-                              {b.providerId ? 'Reassign' : '🚨 Assign'}
-                            </button>
-                          )}
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                            {/* Override Complete — shown for overdue stuck bookings */}
+                            {sla?.isOverdue && !['completed', 'paid', 'cancelled', 'canceled'].includes((b.status || '').toLowerCase()) && (
+                              <button
+                                onClick={() => handleForceComplete(b)}
+                                disabled={forcingComplete === b._id}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all disabled:opacity-60"
+                                title="Admin override: mark this stuck job as completed"
+                              >
+                                {forcingComplete === b._id ? '⏳' : '✅'} Override Complete
+                              </button>
+                            )}
+                            {/* Reassign button — shown for all non-terminal bookings */}
+                            {!['completed', 'paid', 'cancelled', 'canceled'].includes((b.status || '').toLowerCase()) && (
+                              <button
+                                onClick={() => setAssignTarget(b)}
+                                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                                  !b.providerId
+                                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-200 animate-pulse border border-red-500 ring-2 ring-red-300'
+                                    : sla?.isOverdue
+                                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-200'
+                                      : 'bg-primary-600 hover:bg-primary-700 text-white shadow-sm hover:shadow-md'
+                                }`}
+                              >
+                                <UserCheck size={13} />
+                                {b.providerId ? 'Reassign' : '🚨 Assign'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
