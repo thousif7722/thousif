@@ -46,7 +46,6 @@ const schema = yup.object({
   line1: yup.string().required('Address required'),
   city: yup.string().required('City required'),
   state: yup.string().required('State required'),
-  pincode: yup.string().matches(/^\d{6}$/, '6-digit pincode required').required(),
   couponCode: yup.string().optional(),
   notes: yup.string().max(300).optional(),
 });
@@ -85,7 +84,6 @@ function LocationPicker({ onLocationSet, savedAddress }) {
     line1: savedAddress?.line1 || '',
     city: savedAddress?.city || '',
     state: savedAddress?.state || '',
-    pincode: savedAddress?.pincode || '',
   });
 
   const detectGPS = useCallback((isAuto = false) => {
@@ -104,7 +102,7 @@ function LocationPicker({ onLocationSet, savedAddress }) {
         const addr = await reverseGeocode(lat, lng);
         if (!isAuto) toast.dismiss('geocode');
         if (addr) {
-          setManual({ line1: addr.line1 || '', city: addr.city || '', state: addr.state || '', pincode: addr.pincode || '' });
+          setManual({ line1: addr.line1 || '', city: addr.city || '', state: addr.state || '' });
           if (!isAuto) toast.success('Location detected!');
         } else {
           if (!isAuto) toast.success('GPS locked!');
@@ -130,12 +128,12 @@ function LocationPicker({ onLocationSet, savedAddress }) {
   useEffect(() => { detectGPS(true); }, [detectGPS]);
 
   function handleManualConfirm() {
-    if (!manual.city || !manual.line1 || !manual.pincode) {
-      toast.error('Please fill in your address, city and pincode');
+    if (!manual.city || !manual.line1) {
+      toast.error('Please fill in your address and city');
       return;
     }
     setConfirmed(true);
-    // FIX: No GPS? Pass null coords — backend will use city-based matching
+    // No GPS? Pass null coords — backend will use city-based matching
     onLocationSet({ coords: gpsCoords, address: manual, manualOnly: !gpsCoords });
     toast.success('Address confirmed!');
   }
@@ -143,7 +141,6 @@ function LocationPicker({ onLocationSet, savedAddress }) {
   function handleGpsConfirm() {
     if (!gpsCoords) { toast.error('Please detect your location first'); return; }
     if (!manual.city) { toast.error('City not detected. Please redetect or enter manually.'); return; }
-    if (!/^\d{6}$/.test(manual.pincode)) { toast.error('Please enter a valid 6-digit pincode'); return; }
     setConfirmed(true);
     onLocationSet({ coords: gpsCoords, address: manual });
     toast.success('Location confirmed!');
@@ -164,8 +161,6 @@ function LocationPicker({ onLocationSet, savedAddress }) {
         <input value={manual.state} onChange={e => { setManual(m => ({ ...m, state: e.target.value })); setConfirmed(false); }}
           placeholder="State *" className="input-field text-sm" />
       </div>
-      <input value={manual.pincode} onChange={e => { setManual(m => ({ ...m, pincode: e.target.value })); setConfirmed(false); }}
-        placeholder="Pincode (6 digits) *" maxLength={6} className="input-field text-sm" />
       {!confirmed ? (
         <button type="button" onClick={handleManualConfirm}
           className="w-full py-3.5 rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2">
@@ -247,15 +242,7 @@ function LocationPicker({ onLocationSet, savedAddress }) {
                 className="input-field pr-10 text-sm" />
               <PenLine size={14} className="absolute right-3 top-3.5 text-slate-400" />
             </div>
-            <input
-              value={manual.pincode}
-              onChange={e => { setManual(m => ({ ...m, pincode: e.target.value })); setConfirmed(false); }}
-              placeholder="Pincode (6 digits) *"
-              maxLength={6}
-              inputMode="numeric"
-              pattern="\d{6}"
-              className="input-field text-sm"
-            />
+
             {!confirmed ? (
               <button type="button" onClick={handleGpsConfirm}
                 className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2">
@@ -299,7 +286,6 @@ export default function BookingForm() {
       scheduledDate: dayjs().format('YYYY-MM-DD'),
       city: prefill?.city || user?.addresses?.[0]?.city || '',
       state: prefill?.state || user?.addresses?.[0]?.state || '',
-      pincode: prefill?.pincode || user?.addresses?.[0]?.pincode || '',
       line1: prefill?.line1 || user?.addresses?.[0]?.line1 || '',
     },
   });
@@ -329,7 +315,6 @@ export default function BookingForm() {
     if (data.address?.line1) setValue('line1', data.address.line1);
     if (data.address?.city) setValue('city', data.address.city);
     if (data.address?.state) setValue('state', data.address.state);
-    if (data.address?.pincode) setValue('pincode', data.address.pincode);
   }, [setValue]);
 
   async function onSubmit(data) {
@@ -358,7 +343,6 @@ export default function BookingForm() {
           line1: locationData.address?.line1 || data.line1,
           city: locationData.address?.city || data.city,
           state: locationData.address?.state || data.state,
-          pincode: String(locationData.address?.pincode || data.pincode),
           ...(coords ? { location: { coordinates: coords } } : {}),
         },
         customerNotes: data.notes?.trim() || undefined,
