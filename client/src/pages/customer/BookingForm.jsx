@@ -143,6 +143,7 @@ function LocationPicker({ onLocationSet, savedAddress }) {
   function handleGpsConfirm() {
     if (!gpsCoords) { toast.error('Please detect your location first'); return; }
     if (!manual.city) { toast.error('City not detected. Please redetect or enter manually.'); return; }
+    if (!/^\d{6}$/.test(manual.pincode)) { toast.error('Please enter a valid 6-digit pincode'); return; }
     setConfirmed(true);
     onLocationSet({ coords: gpsCoords, address: manual });
     toast.success('Location confirmed!');
@@ -246,6 +247,15 @@ function LocationPicker({ onLocationSet, savedAddress }) {
                 className="input-field pr-10 text-sm" />
               <PenLine size={14} className="absolute right-3 top-3.5 text-slate-400" />
             </div>
+            <input
+              value={manual.pincode}
+              onChange={e => { setManual(m => ({ ...m, pincode: e.target.value })); setConfirmed(false); }}
+              placeholder="Pincode (6 digits) *"
+              maxLength={6}
+              inputMode="numeric"
+              pattern="\d{6}"
+              className="input-field text-sm"
+            />
             {!confirmed ? (
               <button type="button" onClick={handleGpsConfirm}
                 className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2">
