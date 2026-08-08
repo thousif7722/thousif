@@ -81,8 +81,8 @@ function WalletModal({ provider, onClose, onDone }) {
 }
 
 // ── KYC Document Viewer ───────────────────────────────────────────────────────
-// Documents live permanently in S3 (private bucket).
-// Each click generates a FRESH 1-hour signed URL via the backend.
+// Documents live PERMANENTLY in AWS S3 (private bucket).
+// On each admin view request, the backend generates a fresh 7-day signed URL.
 function KycDocViewer({ provider }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -99,7 +99,7 @@ function KycDocViewer({ provider }) {
       setGeneratedAt(res.data.data.generatedAt);
       setOpen(true);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to generate document links');
+      toast.error(err.response?.data?.error || 'Failed to fetch document links');
     } finally {
       setLoading(false);
     }
@@ -114,12 +114,12 @@ function KycDocViewer({ provider }) {
       <button
         onClick={fetchDocs}
         disabled={loading}
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-all disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-2 rounded-xl transition-all disabled:opacity-60 shadow-sm"
       >
         {loading ? (
-          <><RefreshCcw size={12} className="animate-spin" /> Generating Link…</>
+          <><RefreshCcw size={13} className="animate-spin" /> Fetching Secure Links…</>
         ) : (
-          <><Lock size={12} /> View KYC Documents</>
+          <><Lock size={13} /> View Permanent KYC Documents</>
         )}
       </button>
 
@@ -131,10 +131,10 @@ function KycDocViewer({ provider }) {
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h2 className="font-bold text-slate-900 flex items-center gap-2">
-                  <Lock size={16} className="text-indigo-600" /> KYC Documents — {provider.name}
+                  <Lock size={18} className="text-indigo-600" /> KYC Documents — {provider.name}
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  🔒 Secure link generated at {dayjs(generatedAt).format('HH:mm:ss')} · Expires in 1 hour
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  ♾️ Permanent S3 Document Access · Private Encrypted Storage
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -142,11 +142,11 @@ function KycDocViewer({ provider }) {
                   onClick={fetchDocs}
                   disabled={loading}
                   title="Regenerate fresh signed URLs"
-                  className="p-2 hover:bg-slate-50 rounded-full text-slate-400 transition-colors"
+                  className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
                 >
                   <RefreshCcw size={16} className={loading ? 'animate-spin' : ''} />
                 </button>
-                <button onClick={() => setOpen(false)} className="p-2 hover:bg-slate-50 rounded-full text-slate-400">
+                <button onClick={() => setOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500">
                   <X size={20} />
                 </button>
               </div>
@@ -156,8 +156,8 @@ function KycDocViewer({ provider }) {
             <div className="mx-5 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
               <ShieldAlert size={15} className="text-amber-600 mt-0.5 shrink-0" />
               <p className="text-xs text-amber-800">
-                <strong>Confidential.</strong> These documents contain sensitive personal identity information (Aadhaar, PAN).
-                Access is logged for compliance. Do not share, screenshot, or distribute these links.
+                <strong>Confidential Identity Files.</strong> Stored permanently for legal compliance & audit purposes.
+                Access is logged. Do not share, screenshot, or distribute these links.
               </p>
             </div>
 
@@ -167,7 +167,6 @@ function KycDocViewer({ provider }) {
               <DocCard
                 label="🤳 Selfie / Photo ID"
                 url={docs.selfie}
-                isImage
                 color="blue"
               />
               {/* Aadhaar */}
@@ -187,7 +186,7 @@ function KycDocViewer({ provider }) {
             </div>
 
             <div className="p-4 border-t border-slate-100 flex justify-end">
-              <button onClick={() => setOpen(false)} className="btn-secondary px-6 text-sm">Close</button>
+              <button onClick={() => setOpen(false)} className="btn-secondary px-6 text-sm font-semibold">Close</button>
             </div>
           </div>
         </div>
@@ -196,52 +195,61 @@ function KycDocViewer({ provider }) {
   );
 }
 
-function DocCard({ label, url, isImage, number, color }) {
+function DocCard({ label, url, number, color }) {
   const colors = {
-    blue: { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-600', text: 'text-blue-700' },
-    green: { bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-600', text: 'text-green-700' },
-    purple: { bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-600', text: 'text-purple-700' },
+    blue: { bg: 'bg-blue-50/60', border: 'border-blue-200', badge: 'bg-blue-600 hover:bg-blue-700', text: 'text-blue-700' },
+    green: { bg: 'bg-green-50/60', border: 'border-green-200', badge: 'bg-green-600 hover:bg-green-700', text: 'text-green-700' },
+    purple: { bg: 'bg-purple-50/60', border: 'border-purple-200', badge: 'bg-purple-600 hover:bg-purple-700', text: 'text-purple-700' },
   };
   const c = colors[color] || colors.blue;
 
   if (!url) {
     return (
-      <div className={`rounded-xl border ${c.border} ${c.bg} p-4 flex flex-col items-center justify-center h-48`}>
-        <FileText size={28} className="text-slate-300 mb-2" />
-        <p className="text-xs font-semibold text-slate-500">{label}</p>
-        <p className="text-xs text-slate-400 mt-1">Not uploaded</p>
+      <div className={`rounded-xl border ${c.border} ${c.bg} p-4 flex flex-col items-center justify-center h-52`}>
+        <FileText size={32} className="text-slate-300 mb-2" />
+        <p className="text-xs font-bold text-slate-600">{label}</p>
+        <p className="text-xs text-slate-400 mt-1 italic">Not uploaded</p>
       </div>
     );
   }
 
+  // Check if URL is a PDF document
+  const isPdf = typeof url === 'string' && url.toLowerCase().includes('.pdf');
+
   return (
-    <div className={`rounded-xl border ${c.border} ${c.bg} p-3 flex flex-col gap-2`}>
-      <p className="text-xs font-bold text-slate-700">{label}</p>
-      {number && (
-        <p className={`text-xs font-mono font-bold ${c.text}`}>{number}</p>
-      )}
-      {isImage ? (
-        <a href={url} target="_blank" rel="noreferrer" className="block">
+    <div className={`rounded-xl border ${c.border} ${c.bg} p-3.5 flex flex-col justify-between gap-2`}>
+      <div>
+        <p className="text-xs font-bold text-slate-800 mb-1">{label}</p>
+        {number && (
+          <p className={`text-xs font-mono font-bold ${c.text} mb-2`}>{number}</p>
+        )}
+      </div>
+
+      {!isPdf ? (
+        <a href={url} target="_blank" rel="noreferrer" className="block my-1">
           <img
             src={url}
             alt={label}
-            className="w-full h-36 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition-opacity cursor-pointer"
-            onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+            className="w-full h-36 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+            onError={e => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }}
           />
-          <div style={{ display: 'none' }} className="w-full h-36 rounded-lg border border-slate-200 flex items-center justify-center bg-slate-100">
-            <FileText size={24} className="text-slate-400" />
+          <div style={{ display: 'none' }} className="w-full h-36 rounded-lg border border-slate-200 flex flex-col items-center justify-center bg-slate-100 text-slate-400 gap-1">
+            <FileText size={28} />
+            <span className="text-[10px] font-bold">Image Preview</span>
           </div>
         </a>
       ) : (
-        <div className="w-full h-36 rounded-lg border border-slate-200 bg-white flex items-center justify-center">
-          <FileText size={28} className="text-slate-300" />
-        </div>
+        <a href={url} target="_blank" rel="noreferrer" className="w-full h-36 rounded-lg border border-slate-200 bg-white flex flex-col items-center justify-center gap-1 my-1 hover:bg-slate-50 transition-colors">
+          <FileText size={32} className="text-emerald-600" />
+          <span className="text-[10px] font-bold text-slate-500 uppercase">PDF Document</span>
+        </a>
       )}
+
       <a
         href={url}
         target="_blank"
         rel="noreferrer"
-        className={`inline-flex items-center justify-center gap-1.5 w-full text-xs font-semibold text-white ${c.badge} hover:opacity-90 py-2 rounded-lg transition-opacity`}
+        className={`inline-flex items-center justify-center gap-1.5 w-full text-xs font-semibold text-white ${c.badge} py-2 rounded-lg transition-colors shadow-sm mt-1`}
       >
         <ExternalLink size={12} /> Open Full Document
       </a>

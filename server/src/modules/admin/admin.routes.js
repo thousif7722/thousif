@@ -708,7 +708,7 @@ router.get('/providers/:id/kyc-docs', requirePermission('manage_providers'), asy
   if (!provider) throw new AppError('Provider not found', 404);
 
   const kyc = provider.kyc || {};
-  const EXPIRY_SECONDS = 3600; // 1 hour — fresh link generated per admin click
+  const EXPIRY_SECONDS = 604800; // 7 days (S3 max for IAM user) — regenerated each admin click
 
   // Generate signed URLs in parallel for all 3 KYC documents
   const [aadhaarDoc, panDoc, selfie] = await Promise.all([
@@ -733,7 +733,8 @@ router.get('/providers/:id/kyc-docs', requirePermission('manage_providers'), asy
       },
       expiresInSeconds: EXPIRY_SECONDS,
       generatedAt: new Date().toISOString(),
-      note: 'These signed URLs expire in 1 hour. Request this endpoint again to get a fresh link.',
+      note: 'These signed URLs are valid for 7 days. Click refresh to generate a new link.',
+      expiresAt: new Date(Date.now() + EXPIRY_SECONDS * 1000).toISOString(),
     },
   });
 });
