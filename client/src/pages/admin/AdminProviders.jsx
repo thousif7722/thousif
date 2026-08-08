@@ -5,7 +5,7 @@ import { ConfirmModal } from '@/components/common/UI';
 import {
   Search, Ban, CheckCircle, AlertTriangle, RefreshCw,
   Eye, FileText, CreditCard, X, Wallet, Clock,
-  ShieldAlert, MapPin, Star, Briefcase, User,
+  ShieldAlert, MapPin, Star, Briefcase, User, ExternalLink, Lock, RefreshCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -76,6 +76,175 @@ function WalletModal({ provider, onClose, onDone }) {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ── KYC Document Viewer ───────────────────────────────────────────────────────
+// Documents live permanently in S3 (private bucket).
+// Each click generates a FRESH 1-hour signed URL via the backend.
+function KycDocViewer({ provider }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [docs, setDocs] = useState(null);
+  const [generatedAt, setGeneratedAt] = useState(null);
+
+  const hasAnyDoc = provider.kyc?.aadhaarDoc || provider.kyc?.panDoc || provider.kyc?.selfie;
+
+  async function fetchDocs() {
+    setLoading(true);
+    try {
+      const res = await apiService.getProviderKycDocs(provider._id);
+      setDocs(res.data.data.docs);
+      setGeneratedAt(res.data.data.generatedAt);
+      setOpen(true);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to generate document links');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!hasAnyDoc) {
+    return <span className="text-xs text-slate-400 italic">No documents uploaded</span>;
+  }
+
+  return (
+    <>
+      <button
+        onClick={fetchDocs}
+        disabled={loading}
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg transition-all disabled:opacity-60"
+      >
+        {loading ? (
+          <><RefreshCcw size={12} className="animate-spin" /> Generating Link…</>
+        ) : (
+          <><Lock size={12} /> View KYC Documents</>
+        )}
+      </button>
+
+      {open && docs && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-slate-900 flex items-center gap-2">
+                  <Lock size={16} className="text-indigo-600" /> KYC Documents — {provider.name}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  🔒 Secure link generated at {dayjs(generatedAt).format('HH:mm:ss')} · Expires in 1 hour
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={fetchDocs}
+                  disabled={loading}
+                  title="Regenerate fresh signed URLs"
+                  className="p-2 hover:bg-slate-50 rounded-full text-slate-400 transition-colors"
+                >
+                  <RefreshCcw size={16} className={loading ? 'animate-spin' : ''} />
+                </button>
+                <button onClick={() => setOpen(false)} className="p-2 hover:bg-slate-50 rounded-full text-slate-400">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Security notice */}
+            <div className="mx-5 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
+              <ShieldAlert size={15} className="text-amber-600 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-800">
+                <strong>Confidential.</strong> These documents contain sensitive personal identity information (Aadhaar, PAN).
+                Access is logged for compliance. Do not share, screenshot, or distribute these links.
+              </p>
+            </div>
+
+            {/* Documents grid */}
+            <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Selfie */}
+              <DocCard
+                label="🤳 Selfie / Photo ID"
+                url={docs.selfie}
+                isImage
+                color="blue"
+              />
+              {/* Aadhaar */}
+              <DocCard
+                label="🪪 Aadhaar Card"
+                url={docs.aadhaarDoc}
+                number={provider.kyc?.aadhaarNumber}
+                color="green"
+              />
+              {/* PAN */}
+              <DocCard
+                label="💳 PAN Card"
+                url={docs.panDoc}
+                number={provider.kyc?.panNumber}
+                color="purple"
+              />
+            </div>
+
+            <div className="p-4 border-t border-slate-100 flex justify-end">
+              <button onClick={() => setOpen(false)} className="btn-secondary px-6 text-sm">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function DocCard({ label, url, isImage, number, color }) {
+  const colors = {
+    blue: { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-600', text: 'text-blue-700' },
+    green: { bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-600', text: 'text-green-700' },
+    purple: { bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-600', text: 'text-purple-700' },
+  };
+  const c = colors[color] || colors.blue;
+
+  if (!url) {
+    return (
+      <div className={`rounded-xl border ${c.border} ${c.bg} p-4 flex flex-col items-center justify-center h-48`}>
+        <FileText size={28} className="text-slate-300 mb-2" />
+        <p className="text-xs font-semibold text-slate-500">{label}</p>
+        <p className="text-xs text-slate-400 mt-1">Not uploaded</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-xl border ${c.border} ${c.bg} p-3 flex flex-col gap-2`}>
+      <p className="text-xs font-bold text-slate-700">{label}</p>
+      {number && (
+        <p className={`text-xs font-mono font-bold ${c.text}`}>{number}</p>
+      )}
+      {isImage ? (
+        <a href={url} target="_blank" rel="noreferrer" className="block">
+          <img
+            src={url}
+            alt={label}
+            className="w-full h-36 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition-opacity cursor-pointer"
+            onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+          />
+          <div style={{ display: 'none' }} className="w-full h-36 rounded-lg border border-slate-200 flex items-center justify-center bg-slate-100">
+            <FileText size={24} className="text-slate-400" />
+          </div>
+        </a>
+      ) : (
+        <div className="w-full h-36 rounded-lg border border-slate-200 bg-white flex items-center justify-center">
+          <FileText size={28} className="text-slate-300" />
+        </div>
+      )}
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className={`inline-flex items-center justify-center gap-1.5 w-full text-xs font-semibold text-white ${c.badge} hover:opacity-90 py-2 rounded-lg transition-opacity`}
+      >
+        <ExternalLink size={12} /> Open Full Document
+      </a>
     </div>
   );
 }
@@ -183,23 +352,24 @@ function ProviderDetailModal({ provider, onClose, onAction, onWallet, onDues }) 
                       {provider.kyc?.status || 'Pending'}
                     </span>
                   </div>
-                  {provider.kyc?.selfie && (
-                    <div>
-                      <p className="text-xs text-slate-500 mb-2">Selfie</p>
-                      <img src={provider.kyc.selfie} alt="Selfie" className="w-32 h-32 object-cover rounded-xl border border-slate-200 shadow-sm" />
-                    </div>
-                  )}
+                  {/* Aadhaar & PAN numbers */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-xs text-slate-500 mb-1">Aadhaar</p>
-                      <p className="font-medium text-slate-800 text-sm">{provider.kyc?.aadhaarNumber || '—'}</p>
-                      {provider.kyc?.aadhaarDoc && <a href={provider.kyc.aadhaarDoc} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline">View ↗</a>}
+                      <p className="text-xs text-slate-500 mb-1">Aadhaar No.</p>
+                      <p className="font-medium text-slate-800 text-sm font-mono">{provider.kyc?.aadhaarNumber || '—'}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-slate-500 mb-1">PAN</p>
-                      <p className="font-medium text-slate-800 text-sm">{provider.kyc?.panNumber || '—'}</p>
-                      {provider.kyc?.panDoc && <a href={provider.kyc.panDoc} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline">View ↗</a>}
+                      <p className="text-xs text-slate-500 mb-1">PAN No.</p>
+                      <p className="font-medium text-slate-800 text-sm font-mono">{provider.kyc?.panNumber || '—'}</p>
                     </div>
+                  </div>
+
+                  {/* Secure Document Viewer — generates fresh signed URLs on demand */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+                      <Lock size={11} /> Documents (Aadhaar / PAN / Selfie)
+                    </p>
+                    <KycDocViewer provider={provider} />
                   </div>
                 </div>
               </div>

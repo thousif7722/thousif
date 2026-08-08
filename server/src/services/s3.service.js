@@ -13,6 +13,23 @@ const s3Client = new S3Client({
 
 const BUCKET = process.env.AWS_S3_BUCKET || 'servicehub-dev';
 
+/**
+ * Extract the S3 object key from a stored URL.
+ * Handles both real AWS URLs and dev-mock URLs.
+ *   Real: https://bucket.s3.region.amazonaws.com/kyc/...  → "kyc/..."
+ *   Dev:  https://dev-s3.servicehub.in/kyc/...            → "kyc/..."
+ */
+function extractKeyFromUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    // pathname starts with "/" — strip it
+    return parsed.pathname.slice(1) || null;
+  } catch {
+    return null;
+  }
+}
+
 const s3Service = {
   async upload(key, body, contentType = 'application/octet-stream') {
     const hasRealAwsKeys = process.env.AWS_ACCESS_KEY_ID && !process.env.AWS_ACCESS_KEY_ID.includes('EXAMPLE');
@@ -35,9 +52,27 @@ const s3Service = {
     return getSignedUrl(s3Client, command, { expiresIn });
   },
 
+  /**
+   * Generate a fresh signed URL from a stored S3 URL (handles dev-mock gracefully).
+   * @param {string} storedUrl - The full URL stored in the DB
+   * @param {number} expiresIn - Seconds until the signed URL expires (default 1 hour)
+   * @returns {Promise<string>} Fresh signed URL, or original URL if dev-mock
+   */
+  async getSignedUrlFromStoredUrl(storedUrl, expiresIn = 3600) {
+    if (!storedUrl) return null;
+    const isDev = storedUrl.includes('dev-s3.servicehub.in');
+    if (isDev) {
+      // In development, the bucket is public/mock — return as-is
+      return storedUrl;
+    }
+    const key = extractKeyFromUrl(storedUrl);
+    if (!key) return storedUrl;
+    return this.getSignedUrl(key, expiresIn);
+  },
+
   async delete(key) {
     await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
   },
 };
 
-module.exports = { s3Service };
+module.exports = { s3Service, extractKeyFromUrl };

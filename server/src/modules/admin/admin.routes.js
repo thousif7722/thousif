@@ -10,6 +10,7 @@ const { AppError } = require('../../utils/errors');
 const { cache } = require('../../config/redis');
 const { emitToAdmin, getIO } = require('../../socket');
 const logger = require('../../utils/logger');
+const { s3Service } = require('../../services/s3.service');
 
 const router = express.Router();
 
@@ -681,6 +682,59 @@ router.put('/providers/:id/warn', requirePermission('manage_providers'), async (
     success: true,
     message: `Warning issued (${provider.warningCount}/3)`,
     data: { warningCount: provider.warningCount, isBlocked: provider.isBlocked },
+  });
+});
+
+/**
+ * GET /admin/providers/:id/kyc-docs
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Generate fresh AWS S3 signed URLs for a provider's KYC documents.
+ *
+ * WHY ON-DEMAND SIGNED URLS:
+ *   - S3 bucket is PRIVATE — raw URLs return "Access Denied"
+ *   - Instead of storing expiring signed URLs in the DB, we store only the
+ *     permanent object key (embedded in the full URL), and generate a fresh
+ *     signed URL every time an admin requests to view.
+ *   - Documents are stored PERMANENTLY in S3; only the viewing link is
+ *     short-lived (1 hour). A new link is generated on every admin click.
+ *
+ * AUDIT: Every access is logged (who viewed which provider's documents).
+ */
+router.get('/providers/:id/kyc-docs', requirePermission('manage_providers'), async (req, res) => {
+  const provider = await Provider.findById(req.params.id)
+    .select('name phone kyc')
+    .lean();
+
+  if (!provider) throw new AppError('Provider not found', 404);
+
+  const kyc = provider.kyc || {};
+  const EXPIRY_SECONDS = 3600; // 1 hour — fresh link generated per admin click
+
+  // Generate signed URLs in parallel for all 3 KYC documents
+  const [aadhaarDoc, panDoc, selfie] = await Promise.all([
+    s3Service.getSignedUrlFromStoredUrl(kyc.aadhaarDoc, EXPIRY_SECONDS),
+    s3Service.getSignedUrlFromStoredUrl(kyc.panDoc, EXPIRY_SECONDS),
+    s3Service.getSignedUrlFromStoredUrl(kyc.selfie, EXPIRY_SECONDS),
+  ]);
+
+  // Compliance audit log: who accessed which provider's KYC documents
+  logger.info(`[KYC_ACCESS] Admin/Staff ${req.userId} viewed KYC docs for provider ${provider._id} (${provider.name} | ${provider.phone})`);
+
+  res.json({
+    success: true,
+    data: {
+      providerId: provider._id,
+      providerName: provider.name,
+      kycStatus: kyc.status,
+      docs: {
+        aadhaarDoc: aadhaarDoc || null,
+        panDoc: panDoc || null,
+        selfie: selfie || null,
+      },
+      expiresInSeconds: EXPIRY_SECONDS,
+      generatedAt: new Date().toISOString(),
+      note: 'These signed URLs expire in 1 hour. Request this endpoint again to get a fresh link.',
+    },
   });
 });
 

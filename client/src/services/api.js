@@ -225,6 +225,8 @@ export const apiService = {
   getProviderDues: (id) => api.get(`/admin/providers/${id}/dues`),
   adjustProviderWallet: (id, data) => api.put(`/admin/providers/${id}/wallet`, data),
   clearProviderDues: (id, data) => api.put(`/admin/providers/${id}/dues/clear`, data),
+  // KYC Document Viewer — generates a fresh signed S3 URL on every call (private bucket, 1-hr link)
+  getProviderKycDocs: (id) => api.get(`/admin/providers/${id}/kyc-docs`),
   createCommissionOrder: (data) => api.post('/payments/commission/create-order', data),
   verifyCommissionPayment: (data) => api.post('/payments/commission/verify', data),
   // Team Management
