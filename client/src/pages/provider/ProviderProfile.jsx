@@ -23,6 +23,8 @@ export default function ProviderProfile() {
   const [bank, setBank] = useState({ accountNumber: '', ifscCode: '', bankName: '', accountHolder: '' });
   const [kycFiles, setKycFiles] = useState({ selfie: null, aadhaarDoc: null, panDoc: null });
   const [kycPreviews, setKycPreviews] = useState({ selfie: null, aadhaarDoc: null, panDoc: null });
+  const [kycNumbers, setKycNumbers] = useState({ aadhaarNumber: '', panNumber: '' });
+  const [uploadProgress, setUploadProgress] = useState('');
   
   const [editingBank, setEditingBank] = useState(false);
   const [forceEditKyc, setForceEditKyc] = useState(false);
@@ -33,6 +35,17 @@ export default function ProviderProfile() {
       setProfile(p);
       setForm({ name: p.name || '', experience: p.experience || 0, serviceRadius: p.serviceRadius || 10 });
       setSelectedServices(p.services?.map(s => s._id || s) || []);
+      // Pre-fill KYC numbers from saved profile
+      setKycNumbers({
+        aadhaarNumber: p.kyc?.aadhaarNumber || '',
+        panNumber: p.kyc?.panNumber || '',
+      });
+      // Show existing uploaded docs as persistent previews
+      setKycPreviews({
+        selfie: p.kyc?.selfie || null,
+        aadhaarDoc: p.kyc?.aadhaarDoc || null,
+        panDoc: p.kyc?.panDoc || null,
+      });
       
       if (p.earnings?.bankAccount?.accountNumber) {
         setBank({
@@ -43,7 +56,6 @@ export default function ProviderProfile() {
         });
       }
 
-      // If approved, collapse sections for clean view; if pending/rejected, open all required
       if (p.approvalStatus === 'approved') {
         setOpenSections({ profile: true, services: false, kyc: false, bank: false });
       } else {
@@ -56,14 +68,68 @@ export default function ProviderProfile() {
     setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleFileChange = (key, file) => {
+  /**
+   * Compress an image file on the client before uploading.
+   * Resizes to max 1200px wide/tall and converts to JPEG at 80% quality.
+   * Reduces a 5MB photo to ~200-400KB — 70-80% smaller upload.
+   */
+  async function compressImage(file, maxPx = 1200, quality = 0.8) {
+    return new Promise((resolve) => {
+      // Non-image files (PDF) — pass through unchanged
+      if (!file.type.startsWith('image/')) {
+        resolve(file);
+        return;
+      }
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        let { width, height } = img;
+        if (width > maxPx || height > maxPx) {
+          const ratio = Math.min(maxPx / width, maxPx / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressed);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+      img.src = objectUrl;
+    });
+  }
+
+  const handleFileChange = async (key, file) => {
     if (!file) return;
-    setKycFiles(prev => ({ ...prev, [key]: file }));
-    if (file.type.startsWith('image/')) {
-      const url = URL.createObjectURL(file);
+    // Validate: images and PDFs only (explicit list handles HEIC/HEIF iOS files)
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
+    if (!allowed.includes(file.type) && !file.type.startsWith('image/')) {
+      toast.error(`Unsupported format for ${key}. Please use JPG, PNG, WEBP, or PDF.`);
+      return;
+    }
+    // Compress images before storing (instant — no network needed)
+    const compressed = await compressImage(file);
+    setKycFiles(prev => ({ ...prev, [key]: compressed }));
+    // Show local preview
+    if (compressed.type.startsWith('image/') || file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(compressed);
       setKycPreviews(prev => ({ ...prev, [key]: url }));
     } else {
-      setKycPreviews(prev => ({ ...prev, [key]: null }));
+      // PDF — show a placeholder preview
+      setKycPreviews(prev => ({ ...prev, [key]: '__pdf__' }));
     }
   };
 
@@ -112,30 +178,44 @@ export default function ProviderProfile() {
   }
 
   async function uploadKYC() {
-    if (!kycFiles.selfie && !kycFiles.aadhaarDoc && !kycFiles.panDoc) {
+    const hasNewFile = kycFiles.selfie || kycFiles.aadhaarDoc || kycFiles.panDoc;
+    if (!hasNewFile) {
       return toast.error('Please select at least one document file to upload');
     }
     setSaving(true);
+    setUploadProgress('Compressing images…');
     try {
       const fd = new FormData();
+      // Files are already compressed by handleFileChange
       if (kycFiles.aadhaarDoc) fd.append('aadhaarDoc', kycFiles.aadhaarDoc);
       if (kycFiles.panDoc) fd.append('panDoc', kycFiles.panDoc);
       if (kycFiles.selfie) fd.append('selfie', kycFiles.selfie);
+      // Include Aadhaar and PAN numbers
+      if (kycNumbers.aadhaarNumber) fd.append('aadhaarNumber', kycNumbers.aadhaarNumber);
+      if (kycNumbers.panNumber) fd.append('panNumber', kycNumbers.panNumber);
 
+      setUploadProgress('Uploading to secure server…');
       await apiService.uploadKYC(fd);
       toast.success('KYC documents uploaded & submitted for verification!');
       setForceEditKyc(false);
       setKycFiles({ selfie: null, aadhaarDoc: null, panDoc: null });
-      setProfile(p => ({
-        ...p,
-        kyc: { ...p?.kyc, status: 'submitted' },
-        approvalStatus: p?.approvalStatus === 'rejected' ? 'pending' : p?.approvalStatus,
-      }));
+      setUploadProgress('');
+      // Re-fetch profile so the provider sees their uploaded doc thumbnails
+      const res = await apiService.getMyProfile();
+      const updated = res.data.data;
+      setProfile(updated);
+      setKycPreviews({
+        selfie: updated.kyc?.selfie || null,
+        aadhaarDoc: updated.kyc?.aadhaarDoc || null,
+        panDoc: updated.kyc?.panDoc || null,
+      });
     } catch (err) { 
+      setUploadProgress('');
       toast.error(err.response?.data?.error || 'Upload failed. Please check file sizes and formats.'); 
     }
     setSaving(false);
   }
+
 
   const hasSavedBank = !!profile?.earnings?.bankAccount?.accountNumber;
   const bankVerified = profile?.earnings?.bankAccount?.verified;
@@ -448,88 +528,117 @@ export default function ProviderProfile() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    
-                    {/* 1. Selfie Upload Card */}
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col items-center text-center space-y-2 relative">
-                      <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">1. Profile Selfie *</span>
-                      <label className="relative flex flex-col items-center justify-center w-24 h-24 border-2 border-dashed border-blue-300 rounded-full bg-blue-50/50 cursor-pointer overflow-hidden group hover:border-blue-500 hover:bg-blue-100/50 transition-all">
-                        {kycPreviews.selfie ? (
-                          <img src={kycPreviews.selfie} alt="Selfie preview" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-blue-600">
-                            <Upload size={20} className="mb-1" />
-                            <span className="text-[10px] font-bold">Upload Face</span>
+                  {/* Helper to render a doc preview card */}
+                  {(() => {
+                    const DocUploadCard = ({ fieldKey, label, hint, isCircle }) => {
+                      const preview = kycPreviews[fieldKey];
+                      const hasFile = !!kycFiles[fieldKey];
+                      const savedInS3 = !hasFile && typeof preview === 'string' && preview.startsWith('http');
+                      const isPdf = preview === '__pdf__';
+                      const showImg = preview && preview !== '__pdf__';
+
+                      return (
+                        <div className={`bg-white p-4 rounded-2xl border-2 ${hasFile ? 'border-blue-400' : savedInS3 ? 'border-emerald-300' : 'border-slate-200'} flex flex-col items-center text-center space-y-2 relative`}>
+                          <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">{label}</span>
+                          <label className={`relative flex flex-col items-center justify-center ${isCircle ? 'w-24 h-24 rounded-full' : 'w-full h-28 rounded-2xl'} border-2 border-dashed ${hasFile ? 'border-blue-400 bg-blue-50' : savedInS3 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 bg-slate-50'} cursor-pointer overflow-hidden hover:opacity-90 transition-all`}>
+                            {showImg ? (
+                              <img src={preview} alt={label} className="w-full h-full object-cover" onError={e => e.target.style.display='none'} />
+                            ) : isPdf ? (
+                              <div className="flex flex-col items-center text-emerald-600">
+                                <span className="text-2xl">📄</span>
+                                <span className="text-[10px] font-bold mt-1">PDF Selected</span>
+                              </div>
+                            ) : (
+                              <div className={`flex flex-col items-center justify-center ${savedInS3 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                <Upload size={20} className="mb-1" />
+                                <span className="text-[10px] font-bold">{savedInS3 ? 'Tap to Replace' : 'Tap to Upload'}</span>
+                              </div>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,application/pdf"
+                              onChange={e => handleFileChange(fieldKey, e.target.files[0])}
+                              className="hidden"
+                            />
+                          </label>
+                          <span className="text-[10px] text-slate-400">{hint}</span>
+                          {savedInS3 && !hasFile && (
+                            <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">✅ Uploaded</span>
+                          )}
+                          {hasFile && (
+                            <span className="text-[10px] font-bold text-blue-600">
+                              📎 New file ready ({(kycFiles[fieldKey].size / 1024).toFixed(0)} KB)
+                            </span>
+                          )}
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <div className="space-y-4">
+                        {/* Document upload cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <DocUploadCard fieldKey="selfie" label="1. 🤳 Selfie / Photo" hint="Clear face, good lighting" isCircle />
+                          <DocUploadCard fieldKey="aadhaarDoc" label="2. 🪪 Aadhaar Card" hint="Front side — JPG, PNG or PDF" />
+                          <DocUploadCard fieldKey="panDoc" label="3. 💳 PAN Card" hint="Clear PAN photo — JPG or PDF" />
+                        </div>
+
+                        {/* Aadhaar & PAN number entry */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-extrabold text-slate-600 uppercase tracking-wider mb-1.5">
+                              Aadhaar Number *
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={14}
+                              value={kycNumbers.aadhaarNumber}
+                              onChange={e => setKycNumbers(n => ({ ...n, aadhaarNumber: e.target.value.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1 ').trim() }))}
+                              placeholder="XXXX XXXX XXXX"
+                              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 tracking-widest"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-extrabold text-slate-600 uppercase tracking-wider mb-1.5">
+                              PAN Number *
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={10}
+                              value={kycNumbers.panNumber}
+                              onChange={e => setKycNumbers(n => ({ ...n, panNumber: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
+                              placeholder="ABCDE1234F"
+                              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 tracking-widest uppercase"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Upload progress indicator */}
+                        {uploadProgress && (
+                          <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                            <span className="text-xs font-semibold text-blue-800">{uploadProgress}</span>
                           </div>
                         )}
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          onChange={e => handleFileChange('selfie', e.target.files[0])} 
-                          className="hidden" 
-                        />
-                      </label>
-                      <span className="text-[10px] text-slate-400">Clear face photo</span>
-                      {kycFiles.selfie && <span className="text-[10px] font-bold text-emerald-600">✓ Photo Selected</span>}
-                    </div>
 
-                    {/* 2. Aadhaar Upload Card */}
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col items-center text-center space-y-2">
-                      <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">2. Aadhaar Card *</span>
-                      <label className="relative flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-blue-300 rounded-2xl bg-blue-50/50 cursor-pointer overflow-hidden group hover:border-blue-500 hover:bg-blue-100/50 transition-all">
-                        {kycPreviews.aadhaarDoc ? (
-                          <img src={kycPreviews.aadhaarDoc} alt="Aadhaar preview" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-blue-600">
-                            <ImageIcon size={20} className="mb-1" />
-                            <span className="text-[10px] font-bold">Upload Aadhaar</span>
-                          </div>
-                        )}
-                        <input 
-                          type="file" 
-                          accept="image/*,.pdf" 
-                          onChange={e => handleFileChange('aadhaarDoc', e.target.files[0])} 
-                          className="hidden" 
-                        />
-                      </label>
-                      <span className="text-[10px] text-slate-400">Front & Back image</span>
-                      {kycFiles.aadhaarDoc && <span className="text-[10px] font-bold text-emerald-600">✓ File Selected</span>}
-                    </div>
-
-                    {/* 3. PAN Card Upload Card */}
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col items-center text-center space-y-2">
-                      <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">3. PAN Card *</span>
-                      <label className="relative flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-blue-300 rounded-2xl bg-blue-50/50 cursor-pointer overflow-hidden group hover:border-blue-500 hover:bg-blue-100/50 transition-all">
-                        {kycPreviews.panDoc ? (
-                          <img src={kycPreviews.panDoc} alt="PAN preview" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-blue-600">
-                            <ImageIcon size={20} className="mb-1" />
-                            <span className="text-[10px] font-bold">Upload PAN</span>
-                          </div>
-                        )}
-                        <input 
-                          type="file" 
-                          accept="image/*,.pdf" 
-                          onChange={e => handleFileChange('panDoc', e.target.files[0])} 
-                          className="hidden" 
-                        />
-                      </label>
-                      <span className="text-[10px] text-slate-400">PAN ID photo</span>
-                      {kycFiles.panDoc && <span className="text-[10px] font-bold text-emerald-600">✓ File Selected</span>}
-                    </div>
-
-                  </div>
-
-                  <button 
-                    onClick={uploadKYC} 
-                    disabled={saving} 
-                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-md transition-all"
-                  >
-                    <Upload size={17} /> {saving ? 'Uploading Documents…' : 'Submit KYC Documents for Verification'}
-                  </button>
+                        {/* Submit button */}
+                        <button
+                          onClick={uploadKYC}
+                          disabled={saving}
+                          className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-md transition-all"
+                        >
+                          {saving ? (
+                            <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> {uploadProgress || 'Uploading…'}</>
+                          ) : (
+                            <><Upload size={17} /> Submit KYC Documents for Verification</>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
+
 
             </div>
           )}
