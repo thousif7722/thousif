@@ -88,6 +88,15 @@ export default function App() {
     if (settings?.siteName) {
       document.title = `${settings.siteName} - ${settings.tagline || 'Home Services'}`;
     }
+    if (settings?.faviconUrl) {
+      let link = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = settings.faviconUrl;
+    }
   }, [settings]);
 
   useEffect(() => {

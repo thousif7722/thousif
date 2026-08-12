@@ -763,6 +763,7 @@ const SystemSettingsSchema = new mongoose.Schema({
   key: { type: String, required: true, unique: true, default: 'global' },
   siteName: { type: String, default: 'ServiceHub' },
   logoUrl: { type: String, default: '/logo.png' },
+  faviconUrl: { type: String, default: '/logo.svg' },
   tagline: { type: String, default: 'Premium Home Services at your Doorstep' },
   currencySymbol: { type: String, default: '₹' },
   timezone: { type: String, default: 'Asia/Kolkata' },

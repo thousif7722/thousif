@@ -1591,7 +1591,7 @@ router.get('/settings', async (req, res) => {
 
 router.put('/settings', authorize('admin', 'staff'), async (req, res) => {
   const { 
-    siteName, logoUrl, tagline, currencySymbol, timezone, defaultRadius,
+    siteName, logoUrl, faviconUrl, tagline, currencySymbol, timezone, defaultRadius,
     supportPhone, supportEmail, supportAddress, workingHours,
     gstRate, platformFee, plusPrice, plusPrice6Months, plusPrice1Year, subscriptionModelActive,
     announcementText, announcementActive, maintenanceMode, allowBookings,
@@ -1611,6 +1611,7 @@ router.put('/settings', authorize('admin', 'staff'), async (req, res) => {
 
   if (siteName !== undefined) settings.siteName = siteName;
   if (logoUrl !== undefined) settings.logoUrl = logoUrl;
+  if (faviconUrl !== undefined) settings.faviconUrl = faviconUrl;
   if (tagline !== undefined) settings.tagline = tagline;
   if (currencySymbol !== undefined) settings.currencySymbol = currencySymbol;
   if (timezone !== undefined) settings.timezone = timezone;

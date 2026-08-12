@@ -20,6 +20,7 @@ export default function AdminSettings() {
   // Settings State
   const [siteName, setSiteName] = useState('ServiceHub');
   const [logoUrl, setLogoUrl] = useState('/logo.png');
+  const [faviconUrl, setFaviconUrl] = useState('/logo.svg');
   const [tagline, setTagline] = useState('Premium Home Services at your Doorstep');
   const [currencySymbol, setCurrencySymbol] = useState('₹');
   const [timezone, setTimezone] = useState('Asia/Kolkata');
@@ -106,6 +107,7 @@ export default function AdminSettings() {
       if (data) {
         setSiteName(data.siteName || 'ServiceHub');
         setLogoUrl(data.logoUrl || '/logo.png');
+        setFaviconUrl(data.faviconUrl || '/logo.svg');
         setTagline(data.tagline || 'Premium Home Services at your Doorstep');
         setCurrencySymbol(data.currencySymbol || '₹');
         setTimezone(data.timezone || 'Asia/Kolkata');
@@ -170,6 +172,7 @@ export default function AdminSettings() {
       const payload = {
         siteName,
         logoUrl,
+        faviconUrl,
         tagline,
         currencySymbol,
         timezone,
@@ -458,6 +461,51 @@ export default function AdminSettings() {
                       <Trash2 size={13} /> Reset to Default Logo
                     </button>
                   )}
+                </div>
+              </div>
+
+              {/* Favicon & Google Search Result Icon Upload & URL */}
+              <div>
+                <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">
+                  Replace Website Favicon & Google Search Icon (Upload File or Enter Image URL)
+                </label>
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <label className="cursor-pointer px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20 transition-all shrink-0">
+                      <Upload size={16} />
+                      <span>Upload Favicon Icon</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setFaviconUrl(reader.result);
+                              toast.success('New website icon loaded! Click Save Settings to apply.');
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={faviconUrl}
+                        onChange={e => setFaviconUrl(e.target.value)}
+                        placeholder="e.g. /logo.svg or https://example.com/favicon.png"
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400">
+                    🔍 This icon appears next to your website URL in Google search results, browser tabs, and mobile shortcuts.
+                  </p>
                 </div>
               </div>
 
