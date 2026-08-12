@@ -11,6 +11,7 @@ const bookingService = require('./booking.service');
 const { getIO } = require('../../socket');
 const logger = require('../../utils/logger');
 const pdfService = require('../../services/pdf.service');
+const invoiceService = require('../../services/invoice.service');
 const { bookingRateLimiter } = require('../../middleware/rateLimiter');
 
 const router = express.Router();
@@ -920,7 +921,7 @@ router.get('/:id/invoice', authenticate, async (req, res) => {
   const booking = await Booking.findById(req.params.id)
     .populate('serviceId', 'name category')
     .populate('customerId', 'name phone email')
-    .populate('providerId', 'name phone')
+    .populate('providerId', 'name phone rating')
     .lean();
 
   if (!booking) throw new AppError('Booking not found', 404);
@@ -931,11 +932,23 @@ router.get('/:id/invoice', authenticate, async (req, res) => {
     bookingId: booking._id, status: 'success',
   }).lean();
 
-  const pdfBuffer = await pdfService.generateInvoice({ booking, materials, transaction });
+  // Create or retrieve immutable invoice snapshot
+  const invoiceRecord = await invoiceService.getOrCreateInvoiceForBooking(booking._id);
+  const settingsOverride = invoiceRecord.settingsSnapshot || await invoiceService.getInvoiceSettings();
+
+  // Attach invoice number to booking
+  booking.invoiceNumber = invoiceRecord.invoiceNumber;
+
+  const pdfBuffer = await pdfService.generateInvoice({
+    booking,
+    materials,
+    transaction,
+    settingsOverride,
+  });
 
   res.set({
     'Content-Type': 'application/pdf',
-    'Content-Disposition': `attachment; filename=invoice-${booking.bookingNumber}.pdf`,
+    'Content-Disposition': `attachment; filename=invoice-${invoiceRecord.invoiceNumber}.pdf`,
     'Content-Length': pdfBuffer.length,
   });
   res.send(pdfBuffer);

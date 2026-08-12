@@ -39,6 +39,7 @@ const AdminTeam        = lazy(() => import('@/pages/admin/AdminTeam'));
 const AdminComplaints  = lazy(() => import('@/pages/admin/AdminComplaints'));
 const AdminAnnouncements = lazy(() => import('@/pages/admin/AdminAnnouncements'));
 const AdminSettings     = lazy(() => import('@/pages/admin/AdminSettings'));
+const AdminInvoiceSettings = lazy(() => import('@/pages/admin/AdminInvoiceSettings'));
 const CategoryServicesPage = lazy(() => import('@/pages/customer/CategoryServicesPage'));
 const NotificationsPage  = lazy(() => import('@/pages/shared/NotificationsPage'));
 const PrivacyPolicy = lazy(() => import('@/pages/public/PrivacyPolicy'));
@@ -152,6 +153,8 @@ export default function App() {
         <Route path="/admin/team" element={<ProtectedRoute allowedRoles={['admin']}><AdminTeam /></ProtectedRoute>} />
         <Route path="/admin/announcements" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_announcements"><AdminAnnouncements /></ProtectedRoute>} />
         <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={['admin']}><AdminSettings /></ProtectedRoute>} />
+        <Route path="/admin/invoice-settings" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminInvoiceSettings /></ProtectedRoute>} />
+        <Route path="/admin/settings/invoice" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminInvoiceSettings /></ProtectedRoute>} />
 
         <Route path="*" element={<Navigate to={user ? getRoleHome(user.role) : '/login'} replace />} />
       </Routes>

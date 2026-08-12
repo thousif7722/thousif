@@ -3,7 +3,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const {
   User, Provider, Booking, Transaction,
-  Review, Complaint, Service, WalletLedger, SystemSettings, Notification
+  Review, Complaint, Service, WalletLedger, SystemSettings, Notification,
+  InvoiceSettings, Invoice
 } = require('../../models');
 const { authenticate, authorize, requirePermission } = require('../auth/auth.routes');
 const { AppError } = require('../../utils/errors');
@@ -11,6 +12,8 @@ const { cache } = require('../../config/redis');
 const { emitToAdmin, getIO } = require('../../socket');
 const logger = require('../../utils/logger');
 const { s3Service } = require('../../services/s3.service');
+const invoiceService = require('../../services/invoice.service');
+const pdfService = require('../../services/pdf.service');
 
 const router = express.Router();
 
@@ -1954,6 +1957,114 @@ router.post('/announcements', authorize('admin', 'staff'), async (req, res) => {
       recipientCount: targetUsers.length,
       createdAt: new Date(),
     },
+  });
+// ── Invoice & GST Settings APIs ───────────────────────────────────────────────
+
+/**
+ * GET /admin/invoice-settings
+ * Fetches current invoice & GST customization configuration
+ */
+router.get('/invoice-settings', async (req, res) => {
+  const settings = await invoiceService.getInvoiceSettings();
+  res.json({ success: true, data: settings });
+});
+
+/**
+ * PUT /admin/invoice-settings
+ * Saves updated invoice & GST configuration (Super Admin or staff with manage_financials)
+ */
+router.put('/invoice-settings', async (req, res) => {
+  const role = req.userRole || req.user?.role;
+  const permissions = req.user?.permissions || [];
+  const hasAuth = role === 'admin' || (Array.isArray(permissions) && permissions.includes('manage_financials'));
+  if (!hasAuth) {
+    throw new AppError('Unauthorized: Only Financials Authorized Admin/Staff can edit invoice settings', 403);
+  }
+
+  const updatedSettings = await invoiceService.updateInvoiceSettings(req.body);
+  logger.info(`Admin/Staff ${req.userId} updated Invoice & GST Settings (v${updatedSettings.settingsVersion})`);
+
+  res.json({
+    success: true,
+    message: 'Invoice & GST Settings saved successfully',
+    data: updatedSettings,
+  });
+});
+
+/**
+ * POST /admin/invoice-settings/preview
+ * Generates a live sample PDF using demo data and custom/unsaved settings
+ */
+router.post('/invoice-settings/preview', async (req, res) => {
+  const customSettings = req.body || {};
+  const currentSettings = (await invoiceService.getInvoiceSettings()).toObject();
+  const mergedSettings = { ...currentSettings, ...customSettings };
+
+  const demoBooking = {
+    bookingNumber: 'OWF-INV-100001',
+    status: 'paid',
+    basePrice: 501,
+    surgeMultiplier: 1.0,
+    platformFee: 100,
+    materialCost: 0,
+    extraCharges: 0,
+    discountAmount: 0,
+    totalAmount: 601,
+    paymentMethod: 'ONLINE / UPI',
+    updatedAt: new Date(),
+    serviceId: { name: 'AC Repair - Gas Charging', category: 'AC Repair' },
+    customerId: { name: 'Demo Customer', phone: '+91 98765 43210', email: 'customer@onewayfix.com' },
+    providerId: { name: 'Vishnu Vardhan Reddy', phone: '+91 91234 56789', rating: 4.9 },
+    serviceAddress: { line1: 'Plot 42, Hitech City Main Rd', city: 'Hyderabad' },
+  };
+
+  const pdfBuffer = await pdfService.generateInvoice({
+    booking: demoBooking,
+    materials: null,
+    transaction: { paymentMethod: 'ONLINE / UPI', razorpayPaymentId: 'pay_demo_123456' },
+    settingsOverride: mergedSettings,
+  });
+
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': 'inline; filename=invoice-preview.pdf',
+    'Content-Length': pdfBuffer.length,
+  });
+  res.send(pdfBuffer);
+});
+
+/**
+ * POST /admin/invoice-settings/reset
+ * Resets settings to default OneWayFix layout
+ */
+router.post('/invoice-settings/reset', async (req, res) => {
+  const role = req.userRole || req.user?.role;
+  if (role !== 'admin') throw new AppError('Only Super Admin can reset invoice settings', 403);
+
+  await InvoiceSettings.deleteOne({ key: 'global' });
+  const defaultSettings = await invoiceService.getInvoiceSettings();
+
+  logger.info(`Super Admin ${req.userId} reset Invoice & GST Settings to default`);
+  res.json({ success: true, message: 'Invoice settings reset to default', data: defaultSettings });
+});
+
+/**
+ * GET /admin/invoices
+ * Lists generated historical invoices
+ */
+router.get('/invoices', async (req, res) => {
+  const { page = 1, limit = 20 } = req.query;
+  const skip = (page - 1) * limit;
+
+  const [invoices, total] = await Promise.all([
+    Invoice.find().sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+    Invoice.countDocuments(),
+  ]);
+
+  res.json({
+    success: true,
+    data: invoices,
+    pagination: { total, page: parseInt(page), limit: parseInt(limit) },
   });
 });
 

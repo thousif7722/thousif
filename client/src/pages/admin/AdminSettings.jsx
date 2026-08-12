@@ -323,6 +323,29 @@ export default function AdminSettings() {
           </button>
         </div>
 
+        {/* Invoice & GST Customization Quick Link Banner */}
+        <div className="bg-gradient-to-r from-teal-900 via-emerald-900 to-slate-900 text-white rounded-3xl p-6 shadow-md border border-teal-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-teal-500/20 text-teal-300 flex items-center justify-center font-bold text-xl shrink-0">
+              <FileText size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-base">Invoice & GST Customization Engine</h3>
+                <span className="text-[10px] font-extrabold uppercase bg-teal-500 text-slate-950 px-2.5 py-0.5 rounded-full">NEW</span>
+              </div>
+              <p className="text-xs text-teal-200 mt-1">Configure invoice calculation rules, GST split (Inclusive/Exclusive), charges table, colors, guarantee card, and download live sample PDFs.</p>
+            </div>
+          </div>
+
+          <a
+            href="/admin/invoice-settings"
+            className="px-5 py-3 bg-teal-400 hover:bg-teal-300 text-slate-950 font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 shrink-0 transition-all shadow-lg shadow-teal-400/20"
+          >
+            <span>Open Invoice & GST Module</span> ⚡
+          </a>
+        </div>
+
         {/* Navigation Tabs */}
         <div className="flex overflow-x-auto bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 gap-1 scrollbar-hide">
           {[

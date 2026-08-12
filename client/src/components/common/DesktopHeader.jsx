@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import {
   Bell, LogOut, User, Home, BookOpen,
   Briefcase, DollarSign, Settings, Shield, BarChart2, AlertTriangle,
-  MapPin, ChevronDown, Navigation, Check, Search, Menu
+  MapPin, ChevronDown, Navigation, Check, Search, Menu, FileText
 } from 'lucide-react';
 
 import { logout, selectUser } from '@/store/slices/authSlice';
@@ -81,7 +81,10 @@ export default function DesktopHeader() {
     if (has('manage_bookings')) links.push({ to: '/admin/bookings', label: 'Bookings', icon: BookOpen });
     if (has('manage_providers')) links.push({ to: '/admin/providers', label: 'Providers', icon: Shield });
     if (has('manage_complaints')) links.push({ to: '/admin/complaints', label: 'Complaints', icon: Bell });
-    if (has('manage_financials')) links.push({ to: '/admin/financials', label: 'Financials', icon: DollarSign });
+    if (has('manage_financials')) {
+      links.push({ to: '/admin/financials', label: 'Financials', icon: DollarSign });
+      links.push({ to: '/admin/invoice-settings', label: 'Invoice & GST', icon: FileText });
+    }
     if (has('manage_services')) links.push({ to: '/admin/services', label: 'Services', icon: Briefcase });
     if (has('manage_users')) links.push({ to: '/admin/users', label: 'Users', icon: User });
     if (role === 'admin') {

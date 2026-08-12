@@ -262,6 +262,12 @@ export const apiService = {
   getAdminSettings: () => api.get('/admin/settings'),
   updateAdminSettings: (data) => api.put('/admin/settings', data),
   getPublicSettings: () => api.get('/services/public-settings'),
+
+  // Invoice & GST Customization System
+  getAdminInvoiceSettings: () => api.get('/admin/invoice-settings'),
+  updateAdminInvoiceSettings: (data) => api.put('/admin/invoice-settings', data),
+  resetAdminInvoiceSettings: () => api.post('/admin/invoice-settings/reset'),
+  downloadSampleInvoicePdf: (data) => api.post('/admin/invoice-settings/preview', data, { responseType: 'blob' }),
 };
 
 export default api;

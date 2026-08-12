@@ -840,6 +840,216 @@ const SystemSettingsSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// INVOICE SETTINGS MODEL
+// ══════════════════════════════════════════════════════════════════════════════
+const InvoiceSettingsSchema = new mongoose.Schema({
+  key: { type: String, default: 'global', unique: true },
+  
+  // 1. General Company Settings
+  companyName: { type: String, default: 'ONEWAYFIX' },
+  brandTagline: { type: String, default: 'Premium Home Services' },
+  website: { type: String, default: 'www.onewayfix.com' },
+  supportEmail: { type: String, default: 'support@onewayfix.com' },
+  supportPhone: { type: String, default: '+91 9876543210' },
+  companyAddress: { type: String, default: 'OneWayFix HQ, Hitech City, Hyderabad, TG 500081' },
+  gstin: { type: String, default: '36ABCDE1234F1Z5' },
+  cin: { type: String, default: 'U74999TG2026PTC123456' },
+  logoUrl: { type: String, default: '/logo.png' },
+  invoiceTitle: { type: String, default: 'INVOICE' },
+
+  // 2. GST & Tax Settings
+  gstEnabled: { type: Boolean, default: true },
+  gstMode: { type: String, enum: ['included', 'added_separately', 'no_gst'], default: 'included' },
+  taxCalculationMode: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+  gstPercentage: { type: Number, default: 18 },
+  cgstPercentage: { type: Number, default: 9 },
+  sgstPercentage: { type: Number, default: 9 },
+  igstPercentage: { type: Number, default: 18 },
+  
+  gstAppliesTo: {
+    serviceCharge: { type: Boolean, default: true },
+    platformFee: { type: Boolean, default: true },
+    technicianCharge: { type: Boolean, default: true },
+    partsMaterials: { type: Boolean, default: true },
+    convenienceFee: { type: Boolean, default: false },
+    emergencyFee: { type: Boolean, default: false },
+    otherCharges: { type: Boolean, default: false },
+  },
+
+  // 3. GST Display Options
+  showGst: { type: Boolean, default: true },
+  showCgst: { type: Boolean, default: true },
+  showSgst: { type: Boolean, default: true },
+  showIgst: { type: Boolean, default: false },
+  showGstin: { type: Boolean, default: true },
+  
+  labelGst: { type: String, default: 'GST' },
+  labelCgst: { type: String, default: 'CGST' },
+  labelSgst: { type: String, default: 'SGST' },
+  labelIgst: { type: String, default: 'IGST' },
+  labelTax: { type: String, default: 'Tax' },
+
+  // 4. Charges Configuration
+  charges: [{
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    enabled: { type: Boolean, default: true },
+    type: { type: String, enum: ['percentage', 'fixed', 'actual'], default: 'fixed' },
+    value: { type: Number, default: 0 },
+    order: { type: Number, default: 0 },
+  }],
+
+  // 5. Invoice Numbering
+  numbering: {
+    prefix: { type: String, default: 'OWF-INV-' },
+    startingNumber: { type: Number, default: 100001 },
+    numberLength: { type: Number, default: 6 },
+    includeYear: { type: Boolean, default: false },
+    includeMonth: { type: Boolean, default: false },
+    nextNumber: { type: Number, default: 100001 },
+  },
+
+  // 6. PDF Design & Colors
+  design: {
+    layout: { type: String, enum: ['modern', 'classic', 'minimal', 'professional', 'compact'], default: 'modern' },
+    paperSize: { type: String, enum: ['A4', 'A5', 'Thermal'], default: 'A4' },
+    orientation: { type: String, enum: ['portrait', 'landscape'], default: 'portrait' },
+    primaryColor: { type: String, default: '#0f766e' },
+    secondaryColor: { type: String, default: '#0d9488' },
+    headerBg: { type: String, default: '#ccfbf1' },
+    footerBg: { type: String, default: '#ccfbf1' },
+    tableHeaderColor: { type: String, default: '#1e293b' },
+    tableBorderColor: { type: String, default: '#cbd5e1' },
+    totalHighlightColor: { type: String, default: '#0f766e' },
+    guaranteeCardBg: { type: String, default: '#ecfdf5' },
+    guaranteeBorderColor: { type: String, default: '#059669' },
+    textColor: { type: String, default: '#1e293b' },
+    fontFamily: { type: String, default: 'Helvetica' },
+    logoWidth: { type: Number, default: 120 },
+    logoAlignment: { type: String, enum: ['left', 'center', 'right'], default: 'right' },
+  },
+
+  // 7. Sections Visibility & Order
+  sections: [{
+    id: { type: String, required: true },
+    title: { type: String, required: true },
+    enabled: { type: Boolean, default: true },
+    order: { type: Number, default: 0 },
+  }],
+
+  // 8. Bill To / Bill From Display Fields
+  technicianFields: {
+    showName: { type: Boolean, default: true },
+    showEmployeeId: { type: Boolean, default: true },
+    showPhone: { type: Boolean, default: true },
+    showCategory: { type: Boolean, default: true },
+    showRating: { type: Boolean, default: true },
+    showGstin: { type: Boolean, default: false },
+  },
+  customerFields: {
+    showName: { type: Boolean, default: true },
+    showPhone: { type: Boolean, default: true },
+    showEmail: { type: Boolean, default: true },
+    showAddress: { type: Boolean, default: true },
+    showCustomerId: { type: Boolean, default: false },
+    showGstin: { type: Boolean, default: false },
+  },
+
+  // 9. Guarantee Settings
+  guarantee: {
+    enabled: { type: Boolean, default: true },
+    duration: { type: Number, default: 1 },
+    unit: { type: String, enum: ['Days', 'Weeks', 'Months'], default: 'Months' },
+    title: { type: String, default: '1-MONTH SERVICE GUARANTEE' },
+    description: { type: String, default: 'Your completed service is covered by a 1-month service guarantee, subject to OneWayFix service terms and applicable conditions.' },
+  },
+
+  // 10. Work Summary & Payment Display
+  workSummary: {
+    enabled: { type: Boolean, default: true },
+    title: { type: String, default: 'WORK SUMMARY' },
+    defaultMessage: { type: String, default: 'Job completed successfully according to service checklist.' },
+  },
+  paymentDisplay: {
+    showPaymentMethod: { type: Boolean, default: true },
+    showTransactionId: { type: Boolean, default: true },
+    showPaymentStatus: { type: Boolean, default: true },
+    showPaymentDate: { type: Boolean, default: true },
+    showAmountPaid: { type: Boolean, default: true },
+    showAmountDue: { type: Boolean, default: true },
+  },
+
+  // 11. QR Code Settings
+  qrCode: {
+    enabled: { type: Boolean, default: true },
+    type: { type: String, enum: ['UPI', 'Invoice Verification URL', 'Payment URL', 'Custom URL'], default: 'Invoice Verification URL' },
+    caption: { type: String, default: 'Scan to Verify Invoice' },
+  },
+
+  // 12. Footer & Support Settings
+  footer: {
+    thankYouTitle: { type: String, default: 'THANK YOU!' },
+    thankYouMessage: { type: String, default: 'Thank you for choosing OneWayFix for your home service needs. We appreciate your trust and look forward to serving you again.' },
+    termsText: { type: String, default: 'This is a computer-generated invoice. No signature required. Terms & conditions apply.' },
+  },
+
+  // Settings Version
+  settingsVersion: { type: Number, default: 1 },
+}, { timestamps: true });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INVOICE SNAPSHOT MODEL
+// ══════════════════════════════════════════════════════════════════════════════
+const InvoiceSchema = new mongoose.Schema({
+  invoiceNumber: { type: String, required: true, unique: true, index: true },
+  bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking', required: true, index: true },
+  customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  technicianId: { type: mongoose.Schema.Types.ObjectId, ref: 'Provider' },
+  
+  companySnapshot: mongoose.Schema.Types.Mixed,
+  customerSnapshot: mongoose.Schema.Types.Mixed,
+  technicianSnapshot: mongoose.Schema.Types.Mixed,
+  serviceItems: [{
+    name: String,
+    qty: { type: Number, default: 1 },
+    price: Number,
+    total: Number,
+  }],
+
+  subtotal: { type: Number, required: true },
+  discount: { type: Number, default: 0 },
+  taxableAmount: { type: Number, default: 0 },
+  gstEnabled: { type: Boolean, default: true },
+  gstMode: { type: String, default: 'included' },
+  gstRate: { type: Number, default: 18 },
+  gstAmount: { type: Number, default: 0 },
+  cgstAmount: { type: Number, default: 0 },
+  sgstAmount: { type: Number, default: 0 },
+  igstAmount: { type: Number, default: 0 },
+
+  platformFee: { type: Number, default: 0 },
+  serviceCharge: { type: Number, default: 0 },
+  partsAmount: { type: Number, default: 0 },
+  additionalCharges: { type: Number, default: 0 },
+
+  totalAmount: { type: Number, required: true },
+  amountPaid: { type: Number, required: true },
+  amountDue: { type: Number, default: 0 },
+
+  paymentMethod: String,
+  transactionId: String,
+  paymentStatus: String,
+
+  guaranteeEnabled: { type: Boolean, default: true },
+  guaranteeTitle: String,
+  guaranteeText: String,
+
+  settingsVersion: { type: Number, default: 1 },
+  settingsSnapshot: mongoose.Schema.Types.Mixed,
+  pdfUrl: String,
+}, { timestamps: true });
+
+// ══════════════════════════════════════════════════════════════════════════════
 // EXPORTS
 // ══════════════════════════════════════════════════════════════════════════════
 module.exports = {
@@ -857,4 +1067,6 @@ module.exports = {
   Team: mongoose.model('Team', TeamSchema),
   Attendance: mongoose.model('Attendance', AttendanceSchema),
   SystemSettings: mongoose.model('SystemSettings', SystemSettingsSchema),
+  InvoiceSettings: mongoose.model('InvoiceSettings', InvoiceSettingsSchema),
+  Invoice: mongoose.model('Invoice', InvoiceSchema),
 };
