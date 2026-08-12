@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, MapPin, Star, ChevronRight, Clock, TrendingUp, ArrowRight, X, Shield, Play, Sparkles, Tag, History } from 'lucide-react';
+import { Search, MapPin, Star, ChevronRight, ChevronLeft, Clock, TrendingUp, ArrowRight, X, Shield, Play, Sparkles, Tag, History } from 'lucide-react';
 import {
   fetchServices, fetchCategories,
   setSelectedCategory, setSearch,
@@ -70,31 +70,13 @@ export default function HomePage() {
   const [showDropdown, setShowDropdown] = useState(false);
   const searchRef = useRef(null);
   
-  // Carousel State
-  const carouselRef = useRef(null);
-  const [bannerIndex, setBannerIndex] = useState(0);
+  // Carousel Banners Data
   const banners = publicSettings?.promoBanners?.length > 0 ? publicSettings.promoBanners : [
     { type: 'image', url: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&q=80&w=800', link: '/category/Cleaning' },
     { type: 'video', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4', link: '/category/AC%20Repair' },
     { type: 'image', url: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&q=80&w=800', link: '/category/Electrical' },
-    { type: 'video', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', link: '/services' } // Highly reliable MP4 sample
+    { type: 'video', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', link: '/services' }
   ];
-
-  // Auto-Slide Effect
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setBannerIndex((prev) => (prev + 1) % banners.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, [banners.length]);
-
-  // Sync scroll with index
-  useEffect(() => {
-    if (carouselRef.current) {
-      const scrollValue = carouselRef.current.clientWidth * bannerIndex;
-      carouselRef.current.scrollTo({ left: scrollValue, behavior: 'smooth' });
-    }
-  }, [bannerIndex]);
 
   useEffect(() => {
     dispatch(fetchServices({ category: selectedCategory !== 'All' ? selectedCategory : undefined }));
@@ -216,55 +198,8 @@ export default function HomePage() {
 
       <div className="max-w-4xl mx-auto px-4 md:px-6 pt-6 pb-24 space-y-8 overflow-hidden">
         
-        {/* FLIPKART/AMAZON STYLE MEDIA SLIDER BANNERS */}
-        <div className="relative w-full rounded-2xl md:rounded-3xl overflow-hidden shadow-sm border border-slate-100 bg-slate-900 group">
-          <div 
-            ref={carouselRef}
-            className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none aspect-[16/9] md:aspect-[21/9]" 
-            style={{ scrollBehavior: 'smooth' }}
-            onScroll={(e) => {
-              const idx = Math.round(e.target.scrollLeft / e.target.clientWidth);
-              if (idx !== bannerIndex) setBannerIndex(idx);
-            }}
-          >
-            {banners.map((banner, idx) => (
-              <div 
-                key={idx} 
-                onClick={() => banner.link && navigate(banner.link)}
-                className={`shrink-0 w-full h-full snap-center relative ${banner.link ? 'cursor-pointer' : ''}`}
-              >
-                {banner.type === 'video' || (banner.url && banner.url.endsWith('.mp4')) ? (
-                  <video 
-                    src={banner.url} 
-                    autoPlay 
-                    loop 
-                    muted 
-                    playsInline 
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <img 
-                    src={banner.url} 
-                    alt={`Promo ${idx}`} 
-                    className="w-full h-full object-cover"
-                    loading="lazy" 
-                  />
-                )}
-                {/* Subtle Gradient Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 via-transparent to-transparent" />
-              </div>
-            ))}
-          </div>
-          {/* Slider Dots */}
-          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-10">
-            {banners.map((_, idx) => (
-              <div 
-                key={idx} 
-                className={`h-1.5 rounded-full transition-all duration-300 ${idx === bannerIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
-              />
-            ))}
-          </div>
-        </div>
+        {/* FLIPKART / AMAZON STYLE HERO BANNER CAROUSEL */}
+        <HeroBannerCarousel banners={banners} navigate={navigate} />
 
         {/* CATEGORIES GRID (Large Cards, Mobile 3-col, Desktop 4-col) */}
         <section>
@@ -548,5 +483,131 @@ function VideoSpotlightSection({ navigate }) {
         </div>
       )}
     </section>
+  );
+}
+
+// ── FLIPKART / AMAZON STYLE HERO BANNER CAROUSEL ──────────────────────────────
+function HeroBannerCarousel({ banners, navigate }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const touchStartX = useRef(null);
+
+  // Auto-slide every 5 seconds (5000ms), pause on hover/touch
+  useEffect(() => {
+    if (isHovered || !banners || banners.length <= 1) return;
+
+    const timer = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % banners.length);
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [banners, isHovered]);
+
+  const handlePrev = (e) => {
+    e?.stopPropagation();
+    setCurrentIndex((prev) => (prev === 0 ? banners.length - 1 : prev - 1));
+  };
+
+  const handleNext = (e) => {
+    e?.stopPropagation();
+    setCurrentIndex((prev) => (prev + 1) % banners.length);
+  };
+
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchStartX.current === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX.current - touchEndX;
+
+    if (diff > 50) {
+      handleNext(); // swipe left -> next
+    } else if (diff < -50) {
+      handlePrev(); // swipe right -> prev
+    }
+    touchStartX.current = null;
+  };
+
+  if (!banners || banners.length === 0) return null;
+
+  return (
+    <div 
+      className="relative w-full rounded-2xl md:rounded-3xl overflow-hidden shadow-md border border-slate-100 bg-slate-900 group aspect-[16/9] md:aspect-[21/9]"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Sliding track */}
+      <div 
+        className="flex w-full h-full transition-transform duration-500 ease-in-out"
+        style={{ transform: `translateX(-${currentIndex * 100}%)` }}
+      >
+        {banners.map((banner, idx) => (
+          <div 
+            key={idx}
+            onClick={() => banner.link && navigate(banner.link)}
+            className={`shrink-0 w-full h-full relative ${banner.link ? 'cursor-pointer' : ''}`}
+          >
+            {banner.type === 'video' || (banner.url && banner.url.endsWith('.mp4')) ? (
+              <video 
+                src={banner.url} 
+                autoPlay 
+                loop 
+                muted 
+                playsInline 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <img 
+                src={banner.url} 
+                alt={`Promo ${idx + 1}`} 
+                className="w-full h-full object-cover"
+                loading={idx === 0 ? 'eager' : 'lazy'} 
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/40 via-transparent to-transparent" />
+          </div>
+        ))}
+      </div>
+
+      {/* Prev Arrow (Flipkart style) */}
+      {banners.length > 1 && (
+        <button
+          onClick={handlePrev}
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 md:w-10 md:h-10 bg-black/40 hover:bg-black/70 text-white rounded-full flex items-center justify-center backdrop-blur-md border border-white/20 transition-all opacity-0 group-hover:opacity-100 z-20 shadow-lg"
+          aria-label="Previous Slide"
+        >
+          <ChevronLeft size={20} />
+        </button>
+      )}
+
+      {/* Next Arrow (Flipkart style) */}
+      {banners.length > 1 && (
+        <button
+          onClick={handleNext}
+          className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 md:w-10 md:h-10 bg-black/40 hover:bg-black/70 text-white rounded-full flex items-center justify-center backdrop-blur-md border border-white/20 transition-all opacity-0 group-hover:opacity-100 z-20 shadow-lg"
+          aria-label="Next Slide"
+        >
+          <ChevronRight size={20} />
+        </button>
+      )}
+
+      {/* Flipkart Style Indicator Dots */}
+      <div className="absolute bottom-3 left-0 right-0 flex justify-center items-center gap-1.5 z-20">
+        {banners.map((_, idx) => (
+          <button 
+            key={idx} 
+            onClick={(e) => { e.stopPropagation(); setCurrentIndex(idx); }}
+            className={`h-2 rounded-full transition-all duration-300 ${
+              idx === currentIndex ? 'w-6 bg-white shadow-lg' : 'w-2 bg-white/50 hover:bg-white/80'
+            }`}
+            aria-label={`Go to slide ${idx + 1}`}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
