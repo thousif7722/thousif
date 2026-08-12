@@ -1,6 +1,7 @@
 import React from 'react';
 import Header from '@/components/common/Header';
 import Footer from '@/components/common/Footer';
+import SeoHead from '@/components/seo/SeoHead';
 import { Shield, Lock, Eye, FileText, ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,6 +10,11 @@ export default function PrivacyPolicy() {
 
   return (
     <div className="min-h-screen bg-white">
+      <SeoHead
+        title="Privacy Policy | OneWayFix"
+        description="Learn how OneWayFix protects your personal data, privacy, location details, and payment information."
+        canonical="/privacy"
+      />
       <Header />
       <main className="py-6 pb-16 px-4 max-w-4xl mx-auto">
         <button 

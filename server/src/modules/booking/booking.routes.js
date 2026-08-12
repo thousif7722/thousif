@@ -373,6 +373,12 @@ router.put('/:id/accept', authenticate, authorize('provider'), async (req, res) 
     throw new AppError(`Cannot accept booking with status: ${booking.status}`, 400);
   }
 
+  // 🛡️ Provider Debt Lockout Check
+  const provider = await Provider.findById(req.userId);
+  if (provider?.earnings?.isOnHold || (provider?.earnings?.pendingCommission >= 500) || (provider?.earnings?.walletBalance <= -500)) {
+    throw new AppError('Account suspended due to outstanding debt limit. Please clear your dues to unlock job dispatch.', 400);
+  }
+
   // Check active jobs limit (max 5 open/uncompleted jobs at a time)
   const activeJobsCount = await Booking.countDocuments({
     providerId: req.userId,

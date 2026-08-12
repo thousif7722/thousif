@@ -7,6 +7,8 @@ import { Wallet, TrendingUp, ArrowDownCircle, Loader, AlertTriangle, CheckCircle
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 
+import { loadRazorpayScript } from '@/utils/razorpay';
+
 export default function ProviderEarnings() {
   const [earnings, setEarnings] = useState(null);
   const [period, setPeriod] = useState('30d');
@@ -19,17 +21,9 @@ export default function ProviderEarnings() {
     apiService.getEarnings(period).then(r => setEarnings(r.data.data));
   }, [period]);
 
-  // Load Razorpay script
+  // Pre-load Razorpay script
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    document.body.appendChild(script);
-    return () => {
-      if (document.body.contains(script)) {
-        document.body.removeChild(script);
-      }
-    };
+    loadRazorpayScript();
   }, []);
 
   const [customTopUp, setCustomTopUp] = useState('');
@@ -44,10 +38,11 @@ export default function ProviderEarnings() {
     }
     setPayingCommission(true);
     try {
+      const isLoaded = await loadRazorpayScript();
       const { data } = await apiService.createCommissionOrder({ amount: payAmt });
       const orderData = data.data;
 
-      if (orderData.isDemo || !window.Razorpay || orderData.keyId?.includes('xxxxxxxxxxxxx') || orderData.keyId?.includes('demo')) {
+      if (orderData.isDemo || !window.Razorpay || !isLoaded || orderData.keyId?.includes('xxxxxxxxxxxxx') || orderData.keyId?.includes('demo')) {
         // Instant simulated wallet top-up in development mode
         const verifyRes = await apiService.verifyCommissionPayment({
           razorpayOrderId: orderData.orderId,
@@ -66,7 +61,7 @@ export default function ProviderEarnings() {
         key: orderData.keyId,
         amount: orderData.amount,
         currency: orderData.currency,
-        name: 'ServiceHub Platform',
+        name: 'OneWayFix Platform',
         description: `Add Money to Wallet / Clear Dues (₹${payAmt})`,
         order_id: orderData.orderId,
         prefill: orderData.prefill,
@@ -84,7 +79,7 @@ export default function ProviderEarnings() {
             setCustomTopUp('');
             apiService.getEarnings(period).then(r => setEarnings(r.data.data));
           } catch (err) {
-            toast.error('Payment verification failed.');
+            toast.error(err.response?.data?.error || 'Payment verification failed.');
           } finally {
             setPayingCommission(false);
           }
@@ -93,7 +88,7 @@ export default function ProviderEarnings() {
 
       const rzp = new window.Razorpay(options);
       rzp.on('payment.failed', (resp) => {
-        toast.error(`Payment failed: ${resp.error.description}`);
+        toast.error(`Payment failed: ${resp.error?.description || 'Transaction cancelled'}`);
         setPayingCommission(false);
       });
       rzp.open();

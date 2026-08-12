@@ -1,6 +1,7 @@
 import React from 'react';
 import Header from '@/components/common/Header';
 import Footer from '@/components/common/Footer';
+import SeoHead from '@/components/seo/SeoHead';
 import { FileText, Shield, CheckCircle, AlertCircle, ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,6 +10,11 @@ export default function TermsOfService() {
 
   return (
     <div className="min-h-screen bg-white">
+      <SeoHead
+        title="Terms of Service | OneWayFix"
+        description="Read the Terms of Service for using OneWayFix home service booking platform."
+        canonical="/terms"
+      />
       <Header />
       <main className="py-6 pb-16 px-4 max-w-4xl mx-auto">
         <button 

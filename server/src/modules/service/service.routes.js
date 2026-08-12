@@ -102,7 +102,7 @@ router.get('/public-settings', async (req, res) => {
   let settings = await SystemSettings.findOne({ key: 'global' }).lean();
   if (!settings) {
     settings = {
-      siteName: 'ServiceHub',
+      siteName: 'OneWayFix',
       logoUrl: '/logo.png',
       tagline: 'Premium Home Services at your Doorstep',
       videoSpotlights: [],
@@ -147,6 +147,25 @@ router.get('/options/catalog', async (req, res) => {
   });
 
   res.json({ success: true, count: rateCardItems.length, data: rateCardItems });
+});
+
+/**
+ * GET /services/slug/:slug
+ * Returns a single service by SEO slug (e.g. ac-repair)
+ */
+router.get('/slug/:slug', async (req, res) => {
+  const slug = req.params.slug.toLowerCase();
+  const service = await Service.findOne({ slug, isActive: true }).lean();
+  if (!service) {
+    // Fallback: try regex search on name
+    const fallback = await Service.findOne({
+      name: { $regex: new RegExp(`^${slug.replace(/-/g, ' ')}$`, 'i') },
+      isActive: true,
+    }).lean();
+    if (!fallback) return res.status(404).json({ success: false, error: 'Service not found' });
+    return res.json({ success: true, data: fallback });
+  }
+  res.json({ success: true, data: service });
 });
 
 /**

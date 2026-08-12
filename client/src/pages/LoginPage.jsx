@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Phone, ArrowRight, RefreshCw, ChevronLeft } from 'lucide-react';
 import { sendOTP, verifyOTP, resetOtp, selectAuthLoading, loginWithGoogle } from '@/store/slices/authSlice';
 import { selectPublicSettings } from '@/store/slices/serviceSlice';
+import SeoHead from '@/components/seo/SeoHead';
 import toast from 'react-hot-toast';
 
 const SERVICES_PREVIEW = ['AC Repair', 'Home Cleaning', 'Plumbing', 'Electrical', 'Pest Control', 'Painting'];
@@ -15,7 +16,7 @@ export default function LoginPage() {
   const { otpSent, otpPhone } = useSelector(s => s.auth);
   const settings = useSelector(selectPublicSettings);
 
-  const siteName = settings?.siteName || 'ServiceHub';
+  const siteName = settings?.siteName || 'OneWayFix';
   const logoUrl = settings?.logoUrl;
 
   const [phone, setPhone] = useState('');
@@ -90,6 +91,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-primary-700 via-primary-600 to-blue-500">
+      <SeoHead title="Login | OneWayFix" noIndex={true} />
       {/* Left panel — branding */}
       <div className="hidden lg:flex flex-col justify-between w-1/2 p-16 text-white">
         <div>

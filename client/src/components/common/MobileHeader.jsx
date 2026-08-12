@@ -17,7 +17,7 @@ export default function MobileHeader({ onOpenDrawer }) {
   const settings = useSelector(selectPublicSettings);
   const unreadCount = useSelector(selectUnreadCount);
 
-  const siteName = settings?.siteName || 'ServiceHub';
+  const siteName = settings?.siteName || 'OneWayFix';
   const logoUrl = settings?.logoUrl;
   const role = user?.role || 'customer';
 

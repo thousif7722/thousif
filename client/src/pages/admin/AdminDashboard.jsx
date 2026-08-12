@@ -354,21 +354,38 @@ export default function AdminDashboard() {
           {/* ── Enterprise KPI Cards Grid ─────────────────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
-            {/* Total Commissions Card */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm dark:shadow-xl relative overflow-hidden group hover:border-blue-500/50 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all" />
-              <div className="flex justify-between items-start mb-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/20">
-                  <DollarSign size={20} />
+            {/* Total Commissions Card OR Pending KYC Card depending on Financials Permission */}
+            {(user?.role === 'admin' || user?.permissions?.includes('manage_financials')) ? (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm dark:shadow-xl relative overflow-hidden group hover:border-blue-500/50 transition-all">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all" />
+                <div className="flex justify-between items-start mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/20">
+                    <DollarSign size={20} />
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
+                    <ArrowUpRight size={12} /> Live
+                  </span>
                 </div>
-                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
-                  <ArrowUpRight size={12} /> +14.2%
-                </span>
+                <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Comm. Earnings</p>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">₹{revenue?.monthly?.toLocaleString('en-IN') || '0'}</h3>
+                <p className="text-[10px] text-slate-400 mt-2">Today: ₹{revenue?.today?.toLocaleString('en-IN') || '0'}</p>
               </div>
-              <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Comm. Earnings</p>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">₹{revenue?.monthly?.toLocaleString('en-IN') || '24,58,890'}</h3>
-              <p className="text-[10px] text-slate-400 mt-2">Today: ₹{revenue?.today?.toLocaleString('en-IN') || '45,200'}</p>
-            </div>
+            ) : (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm dark:shadow-xl relative overflow-hidden group hover:border-amber-500/50 transition-all">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl group-hover:bg-amber-500/20 transition-all" />
+                <div className="flex justify-between items-start mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/20">
+                    <ShieldAlert size={20} />
+                  </div>
+                  <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                    Action Required
+                  </span>
+                </div>
+                <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Pending KYC Applications</p>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{overview?.pendingKYC || 0}</h3>
+                <p className="text-[10px] text-slate-400 mt-2">Awaiting Staff Verification</p>
+              </div>
+            )}
 
             {/* Total Bookings Card */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm dark:shadow-xl relative overflow-hidden group hover:border-emerald-500/50 transition-all">
@@ -378,12 +395,12 @@ export default function AdminDashboard() {
                   <Briefcase size={20} />
                 </div>
                 <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
-                  <ArrowUpRight size={12} /> +18.7%
+                  <ArrowUpRight size={12} /> Active
                 </span>
               </div>
               <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Active Bookings</p>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{overview?.activeBookings?.toLocaleString() || '8,642'}</h3>
-              <p className="text-[10px] text-slate-400 mt-2">Completed: {bookings?.statusBreakdown?.completed || '7,214'}</p>
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{overview?.activeBookings?.toLocaleString() || '0'}</h3>
+              <p className="text-[10px] text-slate-400 mt-2">Completed Today: {bookings?.statusBreakdown?.completed || 0}</p>
             </div>
 
             {/* Active Technicians Card */}
@@ -394,12 +411,12 @@ export default function AdminDashboard() {
                   <Shield size={20} />
                 </div>
                 <span className="text-xs font-semibold text-purple-600 dark:text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20">
-                  {overview?.onlineProviders || 1248} Online
+                  {overview?.onlineProviders || 0} Online
                 </span>
               </div>
               <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Total Technicians</p>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{overview?.totalProviders?.toLocaleString() || '1,248'}</h3>
-              <p className="text-[10px] text-slate-400 mt-2">KYC Pending: {overview?.pendingKYC || 12}</p>
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{overview?.totalProviders?.toLocaleString() || '0'}</h3>
+              <p className="text-[10px] text-slate-400 mt-2">KYC Pending: {overview?.pendingKYC || 0}</p>
             </div>
 
             {/* Total Customers Card */}
@@ -410,52 +427,80 @@ export default function AdminDashboard() {
                   <Users size={20} />
                 </div>
                 <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
-                  <ArrowUpRight size={12} /> +12.5%
+                  <ArrowUpRight size={12} /> Active
                 </span>
               </div>
               <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Registered Customers</p>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{overview?.totalUsers?.toLocaleString() || '5,982'}</h3>
-              <p className="text-[10px] text-slate-400 mt-2">Open Complaints: {overview?.openComplaints || 3}</p>
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{overview?.totalUsers?.toLocaleString() || '0'}</h3>
+              <p className="text-[10px] text-slate-400 mt-2">Open Complaints: {overview?.openComplaints || 0}</p>
             </div>
 
           </div>
 
-          {/* ── Main Charts Row (Commissions Trend + Booking Breakdown) ────────────────── */}
+          {/* ── Main Charts Row (Commissions Trend OR Operations Summary + Booking Breakdown) ────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            {/* Commissions Trend Area Chart */}
+            {/* Commissions Trend Area Chart OR Operations Overview Chart */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 lg:col-span-2 shadow-sm dark:shadow-xl">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="font-bold text-base text-slate-900 dark:text-white">Commissions Performance</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Daily platform revenue trend over time</p>
-                </div>
-                <Link to="/admin/financials" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
-                  Financial Details →
-                </Link>
-              </div>
+              {(user?.role === 'admin' || user?.permissions?.includes('manage_financials')) ? (
+                <>
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="font-bold text-base text-slate-900 dark:text-white">Commissions Performance</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Daily platform revenue trend over time</p>
+                    </div>
+                    <Link to="/admin/financials" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+                      Financial Details →
+                    </Link>
+                  </div>
 
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={charts?.revenueByDay || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#2563EB" stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor="#2563EB" stopOpacity={0.0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#334155' : '#E2E8F0'} vertical={false} />
-                    <XAxis dataKey="_id" tickFormatter={d => dayjs(d).format('DD MMM')} tick={{ fontSize: 11, fill: isDark ? '#94A3B8' : '#64748B' }} />
-                    <YAxis tick={{ fontSize: 11, fill: isDark ? '#94A3B8' : '#64748B' }} tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: isDark ? '#0F172A' : '#FFFFFF', borderColor: isDark ? '#334155' : '#CBD5E1', borderRadius: '12px', color: isDark ? '#FFF' : '#0F172A' }}
-                      formatter={(v) => [`₹${v.toLocaleString('en-IN')}`, 'Commissions']}
-                      labelFormatter={d => dayjs(d).format('DD MMMM YYYY')}
-                    />
-                    <Area type="monotone" dataKey="revenue" stroke="#2563EB" strokeWidth={3} fillOpacity={1} fill="url(#revenueGrad)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={charts?.revenueByDay || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#2563EB" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#2563EB" stopOpacity={0.0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#334155' : '#E2E8F0'} vertical={false} />
+                        <XAxis dataKey="_id" tickFormatter={d => dayjs(d).format('DD MMM')} tick={{ fontSize: 11, fill: isDark ? '#94A3B8' : '#64748B' }} />
+                        <YAxis tick={{ fontSize: 11, fill: isDark ? '#94A3B8' : '#64748B' }} tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: isDark ? '#0F172A' : '#FFFFFF', borderColor: isDark ? '#334155' : '#CBD5E1', borderRadius: '12px', color: isDark ? '#FFF' : '#0F172A' }}
+                          formatter={(v) => [`₹${v.toLocaleString('en-IN')}`, 'Commissions']}
+                          labelFormatter={d => dayjs(d).format('DD MMMM YYYY')}
+                        />
+                        <Area type="monotone" dataKey="revenue" stroke="#2563EB" strokeWidth={3} fillOpacity={1} fill="url(#revenueGrad)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="font-bold text-base text-slate-900 dark:text-white">Operations Control Center</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Staff verification queues and live dispatch telemetry</p>
+                    </div>
+                    <Link to="/admin/bookings" className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+                      Dispatch Queue →
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 my-4">
+                    <div className="p-4 rounded-xl bg-blue-50 dark:bg-slate-800/60 border border-blue-100 dark:border-slate-800">
+                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Live Bookings Active</p>
+                      <p className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">{overview?.activeBookings || 0}</p>
+                      <p className="text-xs text-slate-400 mt-1">Requires continuous monitoring</p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-purple-50 dark:bg-slate-800/60 border border-purple-100 dark:border-slate-800">
+                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Technicians Online</p>
+                      <p className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1">{overview?.onlineProviders || 0}</p>
+                      <p className="text-xs text-slate-400 mt-1">Field partners ready</p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Booking Status Donut Chart */}
@@ -532,9 +577,11 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">₹{p.earnings?.totalEarnings?.toLocaleString('en-IN') || '0'}</span>
-                      </div>
+                      {(user?.role === 'admin' || user?.permissions?.includes('manage_financials')) && p.earnings?.totalEarnings !== undefined && (
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">₹{p.earnings.totalEarnings?.toLocaleString('en-IN') || '0'}</span>
+                        </div>
+                      )}
                       <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold text-xs px-2 py-1 rounded-lg border border-amber-500/20 flex items-center gap-1">
                         <Star size={12} fill="currentColor" /> {p.rating?.toFixed(1) || '4.9'}
                       </div>
@@ -606,15 +653,19 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { title: 'Add Service', icon: Wrench, path: '/admin/services', color: 'text-blue-500 dark:text-blue-400', bg: 'bg-blue-500/10' },
-                  { title: 'Manage Providers', icon: Shield, path: '/admin/providers', color: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-500/10' },
-                  { title: 'Broadcast Push', icon: Megaphone, path: '/admin/announcements', color: 'text-purple-500 dark:text-purple-400', bg: 'bg-purple-500/10' },
-                  { title: 'View Financials', icon: DollarSign, path: '/admin/financials', color: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-500/10' },
-                  { title: 'Staff Roles', icon: Users, path: '/admin/team', color: 'text-cyan-500 dark:text-cyan-400', bg: 'bg-cyan-500/10' },
-                  { title: 'Complaints', icon: AlertTriangle, path: '/admin/complaints', color: 'text-red-500 dark:text-red-400', bg: 'bg-red-500/10' },
-                  { title: 'Platform Settings', icon: Settings, path: '/admin/settings', color: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-500/10' },
-                  { title: 'Live Bookings', icon: Briefcase, path: '/admin/bookings', color: 'text-indigo-500 dark:text-indigo-400', bg: 'bg-indigo-500/10' },
-                ].map((act, i) => {
+                  { title: 'Add Service', icon: Wrench, path: '/admin/services', color: 'text-blue-500 dark:text-blue-400', bg: 'bg-blue-500/10', perm: 'manage_services' },
+                  { title: 'Manage Providers', icon: Shield, path: '/admin/providers', color: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-500/10', perm: 'manage_providers' },
+                  { title: 'Broadcast Push', icon: Megaphone, path: '/admin/announcements', color: 'text-purple-500 dark:text-purple-400', bg: 'bg-purple-500/10', perm: 'manage_announcements' },
+                  { title: 'View Financials', icon: DollarSign, path: '/admin/financials', color: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-500/10', perm: 'manage_financials' },
+                  { title: 'Staff Roles', icon: Users, path: '/admin/team', color: 'text-cyan-500 dark:text-cyan-400', bg: 'bg-cyan-500/10', perm: 'admin_only' },
+                  { title: 'Complaints', icon: AlertTriangle, path: '/admin/complaints', color: 'text-red-500 dark:text-red-400', bg: 'bg-red-500/10', perm: 'manage_complaints' },
+                  { title: 'Platform Settings', icon: Settings, path: '/admin/settings', color: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-500/10', perm: 'admin_only' },
+                  { title: 'Live Bookings', icon: Briefcase, path: '/admin/bookings', color: 'text-indigo-500 dark:text-indigo-400', bg: 'bg-indigo-500/10', perm: 'manage_bookings' },
+                ].filter(act => {
+                  if (user?.role === 'admin') return true;
+                  if (act.perm === 'admin_only') return false;
+                  return user?.permissions?.includes(act.perm);
+                }).map((act, i) => {
                   const Icon = act.icon;
                   return (
                     <Link

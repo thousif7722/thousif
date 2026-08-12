@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 export default function ProviderProfile() {
   const allServices = useSelector(selectServices);
   const settings = useSelector(selectPublicSettings);
-  const siteName = settings?.siteName || 'ServiceHub';
+  const siteName = settings?.siteName || 'OneWayFix';
 
   const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);

@@ -100,6 +100,70 @@ app.get('/health', (req, res) => res.json({
   uptime: process.uptime(),
 }));
 
+// ── SEO: robots.txt & Dynamic sitemap.xml ──────────────────────────────────────
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(
+`User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /provider/
+Disallow: /book/
+Disallow: /bookings/
+Disallow: /profile/
+Disallow: /login
+Disallow: /notifications/
+Disallow: /api/
+
+Sitemap: https://onewayfix.com/sitemap.xml`
+  );
+});
+
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const { Service } = require('./models');
+    const services = await Service.find({ isActive: true }).select('slug updatedAt').lean();
+    const baseUrl = 'https://onewayfix.com';
+
+    const staticUrls = [
+      { url: '/', priority: '1.0', changefreq: 'daily' },
+      { url: '/privacy', priority: '0.3', changefreq: 'monthly' },
+      { url: '/terms', priority: '0.3', changefreq: 'monthly' },
+      { url: '/careers', priority: '0.5', changefreq: 'weekly' },
+      { url: '/instructions', priority: '0.4', changefreq: 'monthly' },
+    ];
+
+    const serviceUrls = services.map(s => ({
+      url: `/service/${s.slug || s._id}`,
+      priority: '0.8',
+      changefreq: 'weekly',
+      lastmod: s.updatedAt ? new Date(s.updatedAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+    }));
+
+    const allUrls = [...staticUrls, ...serviceUrls];
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+
+    allUrls.forEach(item => {
+      xml += `  <url>\n`;
+      xml += `    <loc>${baseUrl}${item.url}</loc>\n`;
+      if (item.lastmod) xml += `    <lastmod>${item.lastmod}</lastmod>\n`;
+      xml += `    <changefreq>${item.changefreq}</changefreq>\n`;
+      xml += `    <priority>${item.priority}</priority>\n`;
+      xml += `  </url>\n`;
+    });
+
+    xml += `</urlset>`;
+
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
+  } catch (err) {
+    logger.error('Error generating sitemap.xml:', err);
+    res.status(500).send('Error generating sitemap');
+  }
+});
+
 // ── Swagger Docs ───────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {
   try {

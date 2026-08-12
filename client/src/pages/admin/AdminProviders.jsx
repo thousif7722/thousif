@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useSelector } from 'react-redux';
+import { selectUser } from '@/store/slices/authSlice';
 import { apiService } from '@/services/api';
 import Header from '@/components/common/Header';
 import { ConfirmModal } from '@/components/common/UI';
@@ -258,9 +260,30 @@ function DocCard({ label, url, number, color }) {
 }
 
 // ── Provider Full Details Modal ────────────────────────────────────────────────
-function ProviderDetailModal({ provider, onClose, onAction, onWallet, onDues }) {
-  const tabs = ['KYC & Bank', 'Performance', 'Earnings'];
+function ProviderDetailModal({ provider: initialProvider, onClose, onAction, onWallet, onDues }) {
+  const user = useSelector(selectUser);
+  const hasFinancials = user?.role === 'admin' || user?.permissions?.includes('manage_financials');
+  const tabs = hasFinancials ? ['KYC & Bank', 'Performance', 'Earnings'] : ['KYC & Bank', 'Performance'];
   const [tab, setTab] = useState('KYC & Bank');
+  const [provider, setProvider] = useState(initialProvider);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch live real-time data on mount and on demand
+  useEffect(() => {
+    fetchLiveData();
+  }, [initialProvider._id]);
+
+  async function fetchLiveData() {
+    setRefreshing(true);
+    try {
+      const res = await apiService.getAdminProviderById(initialProvider._id);
+      setProvider(res.data.data);
+    } catch (e) {
+      // fallback to initial data on error
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -280,10 +303,25 @@ function ProviderDetailModal({ provider, onClose, onAction, onWallet, onDues }) 
                 <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${provider.isBlocked ? 'bg-red-100 text-red-700' : provider.approvalStatus === 'approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                   {provider.isBlocked ? 'Blocked' : provider.approvalStatus}
                 </span>
+                {provider.earnings?.isOnHold && (
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-red-100 text-red-700 flex items-center gap-1">
+                    <Ban size={10} /> Debt Hold
+                  </span>
+                )}
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-full text-slate-400 transition-colors"><X size={20} /></button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={fetchLiveData}
+              disabled={refreshing}
+              title="Refresh live data"
+              className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"
+            >
+              <RefreshCw size={16} className={refreshing ? 'animate-spin text-blue-500' : ''} />
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-full text-slate-400 transition-colors"><X size={20} /></button>
+          </div>
         </div>
 
         {provider.isBlocked && provider.blockReason && (
@@ -300,9 +338,9 @@ function ProviderDetailModal({ provider, onClose, onAction, onWallet, onDues }) 
         <div className="grid grid-cols-4 divide-x divide-slate-100 bg-slate-50 border-b border-slate-100">
           {[
             { icon: Star, label: 'Rating', value: provider.rating?.toFixed(1) || '—', sub: `${provider.ratingCount || 0} reviews` },
-            { icon: Briefcase, label: 'Completed', value: provider.completedJobs || 0, sub: `${provider.cancelledJobs || 0} cancelled` },
+            { icon: Briefcase, label: 'Completed Jobs', value: provider._liveStats?.totalCompletedJobs ?? provider.completedJobs ?? 0, sub: `${provider._liveStats?.activeJobs ?? '—'} active now` },
             { icon: AlertTriangle, label: 'Warnings', value: `${provider.warningCount || 0}/3`, sub: provider.warningCount >= 3 ? 'Auto-blocked' : 'Active' },
-            { icon: ShieldAlert, label: 'Risk Score', value: provider.riskScore || 0, sub: provider.riskScore >= 70 ? '⚠️ High Risk' : 'Normal' },
+            { icon: ShieldAlert, label: 'Debt Hold', value: provider.earnings?.isOnHold ? '⛔ YES' : '✅ No', sub: `₹${Number(provider.earnings?.pendingCommission || 0).toLocaleString('en-IN')} pending` },
           ].map(({ icon: Icon, label, value, sub }) => (
             <div key={label} className="flex items-center gap-3 p-4">
               <Icon size={16} className="text-slate-400 shrink-0" />
@@ -470,13 +508,26 @@ function ProviderDetailModal({ provider, onClose, onAction, onWallet, onDues }) 
 
           {tab === 'Earnings' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Live Refresh Banner */}
+              <div className="md:col-span-2 flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
+                <span className="text-xs text-blue-700 font-semibold flex items-center gap-1.5">
+                  <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+                  {refreshing ? 'Fetching real-time financial data…' : 'Live Financial Data · Updated Now'}
+                </span>
+                <button onClick={fetchLiveData} disabled={refreshing} className="text-xs font-bold text-blue-600 hover:underline">
+                  {refreshing ? '' : '↻ Refresh'}
+                </button>
+              </div>
+
               {[
                 { label: 'Total Earnings', value: provider.earnings?.totalEarnings || 0, cls: 'text-emerald-600', bg: 'bg-emerald-50' },
-                { label: 'Wallet Balance', value: provider.earnings?.walletBalance || 0, cls: 'text-blue-600', bg: 'bg-blue-50' },
+                { label: 'Wallet Balance', value: provider.earnings?.walletBalance || 0, cls: Number(provider.earnings?.walletBalance) < 0 ? 'text-red-600' : 'text-blue-600', bg: 'bg-blue-50' },
                 { label: 'Security Deposit', value: provider.earnings?.securityDeposit || 0, cls: 'text-purple-600', bg: 'bg-purple-50' },
-                { label: 'Pending Commission', value: provider.earnings?.pendingCommission || 0, cls: 'text-red-600', bg: 'bg-red-50' },
+                { label: 'Pending Commission', value: provider.earnings?.pendingCommission || 0, cls: Number(provider.earnings?.pendingCommission) >= 500 ? 'text-red-600 font-black' : 'text-amber-600', bg: Number(provider.earnings?.pendingCommission) >= 500 ? 'bg-red-50 border border-red-200' : 'bg-amber-50' },
                 { label: 'Total Commission Paid', value: provider.earnings?.totalCommissionPaid || 0, cls: 'text-slate-700', bg: 'bg-slate-50' },
-                { label: 'On Hold', value: provider.earnings?.isOnHold ? '⛔ Yes' : '✅ No', cls: provider.earnings?.isOnHold ? 'text-red-600' : 'text-emerald-600', bg: 'bg-slate-50', raw: true },
+                { label: 'Debt Lock Status', value: provider.earnings?.isOnHold ? '⛔ LOCKED (On Hold)' : '✅ Active', cls: provider.earnings?.isOnHold ? 'text-red-600 text-sm' : 'text-emerald-600', bg: provider.earnings?.isOnHold ? 'bg-red-50 border border-red-200' : 'bg-emerald-50', raw: true },
+                { label: 'Active Jobs Now', value: provider._liveStats?.activeJobs ?? '—', cls: 'text-slate-800', bg: 'bg-slate-50', raw: true },
+                { label: "Today's Jobs", value: provider._liveStats?.todayJobs ?? '—', cls: 'text-slate-800', bg: 'bg-slate-50', raw: true },
               ].map(({ label, value, cls, bg, raw }) => (
                 <div key={label} className={`card p-4 border-0 ${bg}`}>
                   <p className="text-xs text-slate-500 mb-1">{label}</p>
@@ -631,6 +682,8 @@ function ApprovalBadge({ p }) {
 // ADMIN PROVIDERS — FULL PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 export default function AdminProviders() {
+  const user = useSelector(selectUser);
+  const hasFinancials = user?.role === 'admin' || user?.permissions?.includes('manage_financials');
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -844,7 +897,7 @@ export default function AdminProviders() {
                       className="rounded text-primary-600 focus:ring-primary-500 cursor-pointer"
                     />
                   </th>
-                  {['Provider', 'Phone', 'Tier', 'Rating', 'Jobs', 'Warnings', 'KYC', 'Verified By', 'Commission Hold', 'Status', 'Actions'].map(h => (
+                  {['Provider', 'Phone', 'Tier', 'Rating', 'Jobs', 'Wallet Bal', 'Pending Commission', 'Warnings', 'KYC', 'Verified By', 'Debt Hold', 'Status', 'Actions'].map(h => (
                     <th key={h} className={thCls}>{h}</th>
                   ))}
                 </tr>
@@ -885,6 +938,26 @@ export default function AdminProviders() {
                     </td>
                     <td className={tdCls}>{p.rating?.toFixed(1) || '—'} ⭐</td>
                     <td className={tdCls}>{p.completedJobs || 0}</td>
+                    {/* Wallet Balance */}
+                    <td className={tdCls}>
+                      {hasFinancials ? (
+                        <span className={`text-xs font-bold ${Number(p.earnings?.walletBalance) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                          ₹{Number(p.earnings?.walletBalance || 0).toLocaleString('en-IN')}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-mono text-slate-400 font-medium">🔒 Restricted</span>
+                      )}
+                    </td>
+                    {/* Pending Commission */}
+                    <td className={tdCls}>
+                      {hasFinancials ? (
+                        <span className={`text-xs font-bold ${Number(p.earnings?.pendingCommission) >= 500 ? 'text-red-600 bg-red-50 px-1.5 py-0.5 rounded' : 'text-slate-600'}`}>
+                          ₹{Number(p.earnings?.pendingCommission || 0).toLocaleString('en-IN')}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-mono text-slate-400 font-medium">🔒 Restricted</span>
+                      )}
+                    </td>
                     <td className={tdCls}>
                       <span className={`text-xs font-bold ${p.warningCount >= 3 ? 'text-red-600' : p.warningCount > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
                         {p.warningCount || 0}/3
@@ -908,13 +981,14 @@ export default function AdminProviders() {
                         <span className="text-xs text-slate-400">—</span>
                       )}
                     </td>
+                    {/* Debt Hold Status */}
                     <td className={tdCls}>
-                      {p.earnings?.isOnHold ? (
+                      {p.earnings?.isOnHold || Number(p.earnings?.pendingCommission) >= 500 ? (
                         <button onClick={() => setDuesModal(p)} className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded-lg font-semibold hover:bg-red-100 transition-colors">
-                          <Ban size={10} /> On Hold
+                          <Ban size={10} /> Locked
                         </button>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-xs text-emerald-600 font-semibold">✅ Active</span>
                       )}
                     </td>
                     <td className={tdCls}><ApprovalBadge p={p} /></td>

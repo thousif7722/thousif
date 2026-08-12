@@ -26,7 +26,7 @@ const serviceSlice = createSlice({
     selectedCategory: 'All', 
     search: '',
     settings: {
-      siteName: 'ServiceHub',
+      siteName: 'OneWayFix',
       logoUrl: '/logo.png',
       tagline: 'Premium Home Services at your Doorstep',
       videoSpotlights: [],

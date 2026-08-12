@@ -27,6 +27,7 @@ const ProviderEarnings = lazy(() => import('@/pages/provider/ProviderEarnings'))
 const ProviderProfile  = lazy(() => import('@/pages/provider/ProviderProfile'));
 const MaterialsBilling = lazy(() => import('@/pages/provider/MaterialsBilling'));
 const ProviderComplaints = lazy(() => import('@/pages/provider/ProviderComplaints'));
+const ProviderLockoutGuard = lazy(() => import('@/components/provider/ProviderLockoutGuard'));
 
 const AdminDashboard   = lazy(() => import('@/pages/admin/AdminDashboard'));
 const AdminUsers       = lazy(() => import('@/pages/admin/AdminUsers'));
@@ -44,6 +45,7 @@ const PrivacyPolicy = lazy(() => import('@/pages/public/PrivacyPolicy'));
 const TermsOfService = lazy(() => import('@/pages/public/TermsOfService'));
 const Instructions = lazy(() => import('@/pages/public/Instructions'));
 const Careers = lazy(() => import('@/pages/public/Careers'));
+const PublicServicePage = lazy(() => import('@/pages/public/PublicServicePage'));
 const GlobalJobAcceptModal = lazy(() => import('@/components/provider/GlobalJobAcceptModal'));
 
 // ── Protected Route wrapper ────────────────────────────────────────────────────
@@ -111,6 +113,7 @@ export default function App() {
         <Route path="/terms-of-service" element={<TermsOfService />} />
         <Route path="/instructions" element={<Instructions />} />
         <Route path="/careers" element={<Careers />} />
+        <Route path="/service/:slug" element={<PublicServicePage />} />
 
         {/* Customer */}
         <Route path="/" element={<ProtectedRoute allowedRoles={['customer']}><HomePage /></ProtectedRoute>} />
@@ -130,12 +133,12 @@ export default function App() {
         <Route path="/notifications" element={<ProtectedRoute allowedRoles={['customer', 'provider', 'admin', 'staff']}><NotificationsPage /></ProtectedRoute>} />
 
         {/* Provider */}
-        <Route path="/provider" element={<ProtectedRoute allowedRoles={['provider']}><ProviderDashboard /></ProtectedRoute>} />
-        <Route path="/provider/bookings" element={<ProtectedRoute allowedRoles={['provider']}><ProviderBookings /></ProtectedRoute>} />
-        <Route path="/provider/bookings/:id/materials" element={<ProtectedRoute allowedRoles={['provider']}><MaterialsBilling /></ProtectedRoute>} />
-        <Route path="/provider/earnings" element={<ProtectedRoute allowedRoles={['provider']}><ProviderEarnings /></ProtectedRoute>} />
-        <Route path="/provider/profile" element={<ProtectedRoute allowedRoles={['provider']}><ProviderProfile /></ProtectedRoute>} />
-        <Route path="/provider/complaints" element={<ProtectedRoute allowedRoles={['provider']}><ProviderComplaints /></ProtectedRoute>} />
+        <Route path="/provider" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderDashboard /></ProviderLockoutGuard></ProtectedRoute>} />
+        <Route path="/provider/bookings" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderBookings /></ProviderLockoutGuard></ProtectedRoute>} />
+        <Route path="/provider/bookings/:id/materials" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><MaterialsBilling /></ProviderLockoutGuard></ProtectedRoute>} />
+        <Route path="/provider/earnings" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderEarnings /></ProviderLockoutGuard></ProtectedRoute>} />
+        <Route path="/provider/profile" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderProfile /></ProviderLockoutGuard></ProtectedRoute>} />
+        <Route path="/provider/complaints" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderComplaints /></ProviderLockoutGuard></ProtectedRoute>} />
 
 
         {/* Admin & Staff Permission Guarded Routes */}

@@ -52,7 +52,7 @@ export default function DesktopHeader() {
   const unreadCount = useSelector(selectUnreadCount);
   const notifications = useSelector(selectNotifications);
 
-  const siteName = settings?.siteName || 'ServiceHub';
+  const siteName = settings?.siteName || 'OneWayFix';
   const logoUrl = settings?.logoUrl;
 
   const [notifOpen, setNotifOpen] = useState(false);

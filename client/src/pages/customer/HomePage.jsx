@@ -13,6 +13,7 @@ import { selectUser } from '@/store/slices/authSlice';
 import Header from '@/components/common/Header';
 import Footer from '@/components/common/Footer';
 import { CardSkeleton } from '@/components/common/UI';
+import SeoHead from '@/components/seo/SeoHead';
 
 // ── Category config
 const CATEGORY_CONFIG = {
@@ -118,9 +119,46 @@ export default function HomePage() {
   const topRated = [...services].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 6);
   const recentBookings = [...services].reverse().slice(0, 4); // mocked logic
 
+  const orgJsonLd = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: 'OneWayFix',
+      url: 'https://onewayfix.com',
+      logo: 'https://onewayfix.com/logo.png',
+      contactPoint: {
+        '@type': 'ContactPoint',
+        telephone: '+91-9000000000',
+        contactType: 'customer service',
+        areaServed: 'IN',
+        availableLanguage: ['English', 'Hindi'],
+      },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'LocalBusiness',
+      name: 'OneWayFix Home Services',
+      image: 'https://onewayfix.com/logo.png',
+      priceRange: '₹149 - ₹4999',
+      address: {
+        '@type': 'PostalAddress',
+        addressCountry: 'IN',
+      },
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-4">
+      <SeoHead
+        title="OneWayFix — Book Trusted Home Service Professionals Near You"
+        description="Book verified home service professionals in your city. AC repair, electrician, plumber, appliance repair, cleaning and carpentry with instant booking."
+        canonical="/"
+        jsonLd={orgJsonLd}
+      />
       <Header />
+
+      {/* Visually hidden or hero-integrated H1 for SEO */}
+      <h1 className="sr-only">Book Trusted Home Service Professionals Near You — OneWayFix</h1>
 
       {/* STICKY SEARCH BAR */}
       <div className="sticky top-[60px] md:top-16 z-30 bg-white/90 backdrop-blur-xl px-4 py-3 border-b border-slate-100 shadow-sm" ref={searchRef}>

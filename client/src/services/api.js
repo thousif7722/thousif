@@ -123,6 +123,7 @@ export const apiService = {
   // Services
   getServices: (params) => api.get('/services', { params }),
   getServiceById: (id) => api.get(`/services/${id}`),
+  getServiceBySlug: (slug) => api.get(`/services/slug/${slug}`),
   getCategories: () => api.get('/services/categories'),
 
   // Bookings
@@ -196,6 +197,7 @@ export const apiService = {
   blockUser: (id, reason) => api.put(`/admin/users/${id}/block`, { reason }),
   unblockUser: (id) => api.put(`/admin/users/${id}/unblock`),
   getAdminProviders: (params) => api.get('/admin/providers', { params }),
+  getAdminProviderById: (id) => api.get(`/admin/providers/${id}`),
   approveProvider: (id) => api.put(`/admin/providers/${id}/approve`),
   rejectProvider: (id, reason) => api.put(`/admin/providers/${id}/reject`, { reason }),
   warnProvider: (id, reason) => api.put(`/admin/providers/${id}/warn`, { reason }),

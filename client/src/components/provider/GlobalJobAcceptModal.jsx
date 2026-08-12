@@ -21,8 +21,18 @@ export default function GlobalJobAcceptModal() {
     const socket = getSocket();
     if (!socket) return;
 
-    const handleNewRequest = (data) => {
+    const handleNewRequest = async (data) => {
       if (!data || !data.bookingId) return;
+
+      // Anti-Debt Check: Suppress job popups if provider is locked out
+      try {
+        const profRes = await apiService.getMyProfile();
+        const p = profRes.data?.data;
+        if (p?.earnings?.isOnHold || (p?.earnings?.pendingCommission >= 500) || (p?.earnings?.walletBalance <= -500)) {
+          console.log(`[JobModal] Account suspended due to debt limit. Suppressing request for booking ${data.bookingId}`);
+          return;
+        }
+      } catch (e) {}
 
       // Check if this booking request was already popped & seen during this session
       const seenKey = `seen_popup_${data.bookingId}`;

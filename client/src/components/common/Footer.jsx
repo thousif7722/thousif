@@ -36,7 +36,7 @@ const SECTIONS = [
 
 export default function Footer() {
   const settings = useSelector(selectPublicSettings);
-  const siteName = settings?.siteName || 'ServiceHub';
+  const siteName = settings?.siteName || 'OneWayFix';
   const logoUrl = settings?.logoUrl;
 
   const [supportData, setSupportData] = useState({ email: '', message: '' });

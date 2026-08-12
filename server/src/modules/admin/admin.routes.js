@@ -362,7 +362,8 @@ router.post('/announcements', authorize('admin', 'staff'), async (req, res) => {
 
 // ── Dashboard Analytics ────────────────────────────────────────────────────────
 router.get('/dashboard', async (req, res) => {
-  const cacheKey = 'admin:dashboard:metrics';
+  const hasFinancials = req.user.role === 'admin' || (Array.isArray(req.user.permissions) && req.user.permissions.includes('manage_financials'));
+  const cacheKey = `admin:dashboard:metrics:${hasFinancials ? 'fin' : 'nofin'}`;
   const cached = await cache.get(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
 
@@ -395,21 +396,21 @@ router.get('/dashboard', async (req, res) => {
       Provider.countDocuments({ approvalStatus: 'approved' }).maxTimeMS(5000),
       Booking.countDocuments({ status: { $in: ['pending', 'assigned', 'accepted', 'in_progress'] } }).maxTimeMS(5000),
       Booking.countDocuments({ createdAt: { $gte: today } }).maxTimeMS(5000),
-      Transaction.aggregate([
+      hasFinancials ? Transaction.aggregate([
         { $match: { type: 'commission', status: 'success', createdAt: { $gte: thisMonth } } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
-      ]).option({ maxTimeMS: 5000 }),
-      Transaction.aggregate([
+      ]).option({ maxTimeMS: 5000 }) : Promise.resolve([]),
+      hasFinancials ? Transaction.aggregate([
         { $match: { type: 'commission', status: 'success', createdAt: { $gte: today } } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
-      ]).option({ maxTimeMS: 5000 }),
+      ]).option({ maxTimeMS: 5000 }) : Promise.resolve([]),
       Provider.countDocuments({ 'kyc.status': 'submitted', approvalStatus: 'pending' }).maxTimeMS(5000),
       Complaint.countDocuments({ status: 'open' }).maxTimeMS(5000),
       Provider.countDocuments({ isOnline: true }).maxTimeMS(5000),
       Booking.aggregate([
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]).option({ maxTimeMS: 5000 }),
-      Transaction.aggregate([
+      hasFinancials ? Transaction.aggregate([
         {
           $match: {
             type: 'commission',
@@ -425,11 +426,11 @@ router.get('/dashboard', async (req, res) => {
           },
         },
         { $sort: { _id: 1 } },
-      ]).option({ maxTimeMS: 5000 }),
+      ]).option({ maxTimeMS: 5000 }) : Promise.resolve([]),
       Provider.find({ approvalStatus: 'approved' })
         .sort({ completedJobs: -1 })
         .limit(10)
-        .select('name rating completedJobs tier earnings.totalEarnings')
+        .select(hasFinancials ? 'name rating completedJobs tier earnings.totalEarnings' : 'name rating completedJobs tier')
         .maxTimeMS(5000)
         .lean(),
       Booking.aggregate([
@@ -471,17 +472,21 @@ router.get('/dashboard', async (req, res) => {
           ? ((cancellationRate[0].cancelled / cancellationRate[0].total) * 100).toFixed(1)
           : 0,
       },
-      revenue: {
+      revenue: hasFinancials ? {
         today: todayRevenue[0]?.total || 0,
         todayTransactions: todayRevenue[0]?.count || 0,
         monthly: monthlyRevenue[0]?.total || 0,
         monthlyTransactions: monthlyRevenue[0]?.count || 0,
-      },
+      } : null,
       charts: {
-        revenueByDay,
-        topProviders,
+        revenueByDay: hasFinancials ? revenueByDay : [],
+        topProviders: hasFinancials ? topProviders : topProviders.map(p => {
+          const { earnings, ...rest } = p;
+          return rest;
+        }),
         topServices,
       },
+      hasFinancialsPermission: hasFinancials,
       generatedAt: new Date().toISOString(),
     };
   } catch (err) {
@@ -490,7 +495,7 @@ router.get('/dashboard', async (req, res) => {
       logger.warn('Admin dashboard query timed out — returning cached or empty metrics');
       return res.json({
         success: true,
-        data: cached || { overview: {}, bookings: {}, revenue: {}, charts: {} },
+        data: cached || { overview: {}, bookings: {}, revenue: null, charts: {} },
         warning: 'Some metrics timed out. Data may be incomplete.',
         cached: !!cached,
       });
@@ -591,6 +596,19 @@ router.get('/providers', requirePermission('manage_providers'), async (req, res)
     Provider.countDocuments(filter),
   ]);
 
+  const hasFinancials = req.user.role === 'admin' || (Array.isArray(req.user.permissions) && req.user.permissions.includes('manage_financials'));
+  if (!hasFinancials) {
+    providers.forEach(p => {
+      if (p.earnings) {
+        p.earnings = {
+          isOnHold: p.earnings.isOnHold,
+          holdReason: p.earnings.holdReason,
+          bankAccount: p.earnings.bankAccount ? { verified: p.earnings.bankAccount.verified } : undefined,
+        };
+      }
+    });
+  }
+
   res.json({ success: true, data: providers, pagination: { total, page: parseInt(page), limit: parseInt(limit) } });
 });
 
@@ -682,6 +700,43 @@ router.put('/providers/:id/warn', requirePermission('manage_providers'), async (
     success: true,
     message: `Warning issued (${provider.warningCount}/3)`,
     data: { warningCount: provider.warningCount, isBlocked: provider.isBlocked },
+  });
+});
+
+/**
+ * GET /admin/providers/:id
+ * Fetch full real-time provider details (earnings, jobs, commission, hold status etc.)
+ * Used by admin panel detail modal for live data refresh.
+ */
+router.get('/providers/:id', requirePermission('manage_providers'), async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    throw new AppError('Invalid provider ID', 400);
+  }
+  const provider = await Provider.findById(req.params.id)
+    .populate('services', 'name category')
+    .populate('kyc.verifiedBy', 'name email phone role')
+    .populate('kyc.assignedTo', 'name email phone role')
+    .lean();
+
+  if (!provider) throw new AppError('Provider not found', 404);
+
+  // Fetch live booking stats
+  const [activeJobsCount, todayJobsCount, totalJobsCount] = await Promise.all([
+    Booking.countDocuments({ providerId: provider._id, status: { $in: ['assigned', 'accepted', 'in_progress'] } }),
+    Booking.countDocuments({ providerId: provider._id, createdAt: { $gte: new Date(new Date().setHours(0,0,0,0)) } }),
+    Booking.countDocuments({ providerId: provider._id, status: { $in: ['completed', 'paid'] } }),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      ...provider,
+      _liveStats: {
+        activeJobs: activeJobsCount,
+        todayJobs: todayJobsCount,
+        totalCompletedJobs: totalJobsCount,
+      },
+    },
   });
 });
 
