@@ -385,62 +385,168 @@ function ServiceCard({ service }) {
     </Link>
   );
 }
-
-// ── Shared Video Component
 function VideoSpotlightSection({ navigate }) {
   const settings = useSelector(selectPublicSettings);
   const rawVideos = settings?.videoSpotlights || VIDEO_ADS;
   const videoList = rawVideos.filter(v => v.active !== false);
 
+  const [activeVideo, setActiveVideo] = useState(null);
+
   if (!videoList || videoList.length === 0) return null;
+
+  const getVideoEmbedUrl = (url) => {
+    if (!url) return '';
+    if (url.includes('youtu.be/')) {
+      const id = url.split('youtu.be/')[1]?.split('?')[0];
+      return `https://www.youtube.com/embed/${id}?autoplay=1&rel=0`;
+    }
+    if (url.includes('youtube.com/watch')) {
+      const params = new URLSearchParams(url.split('?')[1]);
+      return `https://www.youtube.com/embed/${params.get('v')}?autoplay=1&rel=0`;
+    }
+    return url;
+  };
 
   return (
     <section>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2 tracking-tight">
-          <Sparkles size={20} className="text-primary-600" /> Service Spotlight
+          <Sparkles size={20} className="text-primary-600" /> Service Spotlight Videos
         </h2>
       </div>
+
       <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-none -mx-4 px-4 md:px-0 md:-mx-0 snap-x">
         {videoList.map((item, idx) => (
-          <div key={idx} className="snap-center shrink-0 w-64 md:w-72 bg-slate-900 rounded-3xl overflow-hidden shadow-lg border border-slate-800 group relative cursor-pointer" onClick={() => navigate(`/category/${encodeURIComponent(item.category)}`)}>
-            <div className="h-40 relative bg-slate-950 overflow-hidden flex items-center justify-center group">
-               {item.video.includes('youtu') ? (
-                 <iframe 
-                   src={item.video.replace('youtu.be/', 'www.youtube.com/embed/').replace('watch?v=', 'embed/')} 
-                   className="absolute inset-0 w-full h-full pointer-events-none" 
-                   frameBorder="0" 
-                   allow="autoplay; encrypted-media" 
-                   allowFullScreen
-                   title={item.title}
-                 />
-               ) : (
-                 <video 
-                   src={item.video} 
-                   className="absolute inset-0 w-full h-full object-cover" 
-                   autoPlay 
-                   muted 
-                   loop 
-                   playsInline
-                 />
-               )}
-               <div className="absolute inset-0 bg-blue-900/20 group-hover:bg-transparent transition-colors z-10" />
-               <div className="absolute inset-0 flex flex-col items-center justify-center z-20 group-hover:scale-110 transition-transform">
-                 <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center shadow-2xl border border-white/40">
-                   <Play size={24} className="text-white fill-white ml-1 drop-shadow-md" />
-                 </div>
-               </div>
+          <div 
+            key={idx} 
+            className="snap-center shrink-0 w-64 md:w-72 bg-slate-900 rounded-3xl overflow-hidden shadow-lg border border-slate-800 flex flex-col justify-between group relative"
+          >
+            {/* Video Thumbnail / Preview Container */}
+            <div 
+              className="h-44 relative bg-slate-950 overflow-hidden flex items-center justify-center cursor-pointer group"
+              onClick={() => setActiveVideo(item)}
+            >
+              {item.video?.includes('youtu') ? (
+                <iframe 
+                  src={getVideoEmbedUrl(item.video).replace('autoplay=1', 'autoplay=0')} 
+                  className="absolute inset-0 w-full h-full pointer-events-none opacity-80" 
+                  frameBorder="0" 
+                  title={item.title}
+                />
+              ) : (
+                <video 
+                  src={item.video} 
+                  className="absolute inset-0 w-full h-full object-cover opacity-80" 
+                  muted 
+                  loop 
+                  playsInline
+                  autoPlay
+                />
+              )}
+
+              {/* Play Overlay */}
+              <div className="absolute inset-0 bg-slate-950/40 group-hover:bg-slate-950/20 transition-colors z-10" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-20 group-hover:scale-110 transition-transform">
+                <div className="w-14 h-14 bg-primary-600/90 text-white rounded-full flex items-center justify-center shadow-2xl border-2 border-white/50 animate-pulse">
+                  <Play size={26} className="fill-white ml-1 drop-shadow-md" />
+                </div>
+                <span className="text-[11px] font-bold text-white mt-2 bg-slate-900/80 px-2.5 py-0.5 rounded-full border border-white/20">
+                  Tap to Watch Video
+                </span>
+              </div>
+
+              {item.badge && (
+                <span className="absolute top-3 left-3 bg-red-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider z-20 shadow-md">
+                  {item.badge}
+                </span>
+              )}
             </div>
-            <div className="p-4 bg-slate-900 relative z-20">
-              <span className="bg-primary-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider mb-2 inline-block">
-                {item.badge}
-              </span>
-              <h3 className="font-bold text-white text-sm leading-snug line-clamp-1 mb-1">{item.title}</h3>
-              <p className="text-[11px] text-slate-400 line-clamp-1">{item.desc}</p>
+
+            {/* Details & Direct Booking Action */}
+            <div className="p-4 bg-slate-900 flex-1 flex flex-col justify-between">
+              <div>
+                <h3 className="font-bold text-white text-sm leading-snug line-clamp-1 mb-1">{item.title}</h3>
+                <p className="text-[11px] text-slate-400 line-clamp-2 mb-3">{item.desc}</p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                <button
+                  onClick={() => setActiveVideo(item)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors border border-slate-700"
+                >
+                  <Play size={14} className="fill-white" /> Watch
+                </button>
+                <button
+                  onClick={() => navigate(`/category/${encodeURIComponent(item.category)}`)}
+                  className="flex-1 bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1 transition-colors shadow-md"
+                >
+                  Book <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* ── VIDEO LIGHTBOX MODAL ──────────────────────────────────────────────── */}
+      {activeVideo && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+          <div className="bg-slate-900 text-white rounded-3xl overflow-hidden max-w-2xl w-full border border-slate-800 shadow-2xl relative flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Sparkles size={18} className="text-primary-500" />
+                <h3 className="font-bold text-sm sm:text-base text-white truncate">{activeVideo.title}</h3>
+              </div>
+              <button 
+                onClick={() => setActiveVideo(null)}
+                className="w-9 h-9 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full flex items-center justify-center transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Video Player */}
+            <div className="w-full aspect-video bg-black relative flex items-center justify-center">
+              {activeVideo.video?.includes('youtu') ? (
+                <iframe 
+                  src={getVideoEmbedUrl(activeVideo.video)}
+                  className="w-full h-full"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  title={activeVideo.title}
+                />
+              ) : (
+                <video 
+                  src={activeVideo.video}
+                  className="w-full h-full object-contain"
+                  controls
+                  autoPlay
+                  playsInline
+                />
+              )}
+            </div>
+
+            {/* Footer with Description & Book Now Action */}
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-900 border-t border-slate-800">
+              <div>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-md">{activeVideo.desc}</p>
+              </div>
+              <button
+                onClick={() => {
+                  const cat = activeVideo.category;
+                  setActiveVideo(null);
+                  navigate(`/category/${encodeURIComponent(cat)}`);
+                }}
+                className="w-full sm:w-auto bg-primary-600 hover:bg-primary-500 text-white font-extrabold text-xs sm:text-sm px-6 py-3 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95"
+              >
+                Book {activeVideo.category} Now <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
