@@ -179,21 +179,25 @@ async function processProviderMatching(job) {
     return;
   }
 
-  const MAX_ATTEMPTS = 5;
-  if (attempt > MAX_ATTEMPTS) {
-    logger.warn(`Booking ${bookingId}: max matching attempts reached`);
+  // ── 24-HOUR BOOKING LIFETIME ENFORCEMENT ────────────────────────────────────
+  const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+  const createdAtTime = booking.createdAt ? new Date(booking.createdAt).getTime() : Date.now();
+  const bookingAgeMs = Date.now() - createdAtTime;
+
+  if (bookingAgeMs > TWENTY_FOUR_HOURS_MS) {
+    logger.warn(`Booking ${bookingId}: exceeded 24-hour lifetime window. Auto-cancelling.`);
     booking.status = 'cancelled';
     booking.cancellation = {
       cancelledBy: 'system',
-      reason: 'No providers available in your area',
+      reason: 'No provider available/accepted within 24 hours window',
       cancelledAt: new Date(),
     };
     await booking.save();
 
     const { emitToUser } = require('../socket');
-    emitToUser(booking.customerId.toString(), 'booking:no_providers', {
+    emitToUser(booking.customerId.toString(), 'booking:expired', {
       bookingId,
-      message: 'No providers available. Please try again or choose a different time.',
+      message: 'Your booking has expired after 24 hours of no provider assignment.',
     });
     return;
   }
@@ -201,11 +205,19 @@ async function processProviderMatching(job) {
   const provider = await assignProviderToBooking(booking, attempt);
 
   if (!provider) {
-    // Retry after 30 seconds
+    if (attempt === 1) {
+      const { emitToUser } = require('../socket');
+      emitToUser(booking.customerId.toString(), 'booking:searching_providers', {
+        bookingId,
+        message: 'Searching for available technicians nearby. Your request will stay active for 24 hours.',
+      });
+    }
+
+    // Continuously retry matching every 60s as long as booking is under 24 hours old
     await bookingQueue.add('match_provider', {
       ...job.data,
       attempt: attempt + 1,
-    }, { delay: 30000 });
+    }, { delay: 60000 });
   }
 }
 
