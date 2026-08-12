@@ -98,17 +98,31 @@ router.get('/categories', async (req, res) => {
  * Returns public site settings (siteName, logoUrl, tagline, videoSpotlights)
  */
 router.get('/public-settings', async (req, res) => {
-  const { SystemSettings } = require('../../models');
-  let settings = await SystemSettings.findOne({ key: 'global' }).lean();
-  if (!settings) {
-    settings = {
-      siteName: 'OneWayFix',
-      logoUrl: '/logo.png',
-      tagline: 'Premium Home Services at your Doorstep',
-      videoSpotlights: [],
-    };
+  try {
+    const { SystemSettings } = require('../../models');
+    let settings = await SystemSettings.findOne({ key: 'global' }).lean();
+    if (!settings) {
+      settings = {
+        siteName: 'OneWayFix',
+        logoUrl: '/logo.png',
+        faviconUrl: '/logo.svg',
+        tagline: 'Premium Home Services at your Doorstep',
+        videoSpotlights: [],
+      };
+    }
+    res.json({ success: true, data: settings });
+  } catch (err) {
+    res.json({
+      success: true,
+      data: {
+        siteName: 'OneWayFix',
+        logoUrl: '/logo.png',
+        faviconUrl: '/logo.svg',
+        tagline: 'Premium Home Services at your Doorstep',
+        videoSpotlights: [],
+      },
+    });
   }
-  res.json({ success: true, data: settings });
 });
 
 /**

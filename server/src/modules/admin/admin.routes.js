@@ -1575,97 +1575,116 @@ const DEFAULT_VIDEOS = [
 ];
 
 router.get('/settings', async (req, res) => {
-  const SystemSettingsModel = require('../../models').SystemSettings || mongoose.model('SystemSettings');
-  let settings = await SystemSettingsModel.findOne({ key: 'global' });
-  if (!settings) {
-    settings = await SystemSettingsModel.create({
-      key: 'global',
-      siteName: 'ServiceHub',
-      logoUrl: '/logo.png',
-      tagline: 'Premium Home Services at your Doorstep',
-      videoSpotlights: DEFAULT_VIDEOS,
+  try {
+    let settings = await SystemSettings.findOne({ key: 'global' }).lean();
+    if (!settings) {
+      settings = await SystemSettings.create({
+        key: 'global',
+        siteName: 'OneWayFix',
+        logoUrl: '/logo.png',
+        faviconUrl: '/logo.svg',
+        tagline: 'Premium Home Services at your Doorstep',
+        videoSpotlights: DEFAULT_VIDEOS,
+      });
+    }
+    res.json({ success: true, data: settings });
+  } catch (err) {
+    logger.error('Failed to load admin settings:', err);
+    res.json({
+      success: true,
+      data: {
+        key: 'global',
+        siteName: 'OneWayFix',
+        logoUrl: '/logo.png',
+        faviconUrl: '/logo.svg',
+        tagline: 'Premium Home Services at your Doorstep',
+        videoSpotlights: DEFAULT_VIDEOS,
+      },
     });
   }
-  res.json({ success: true, data: settings });
 });
 
 router.put('/settings', authorize('admin', 'staff'), async (req, res) => {
-  const { 
-    siteName, logoUrl, faviconUrl, tagline, currencySymbol, timezone, defaultRadius,
-    supportPhone, supportEmail, supportAddress, workingHours,
-    gstRate, platformFee, plusPrice, plusPrice6Months, plusPrice1Year, subscriptionModelActive,
-    announcementText, announcementActive, maintenanceMode, allowBookings,
-    facebookUrl, instagramUrl, twitterUrl, youtubeUrl, whatsappNumber,
-    apkDownloadUrl, playStoreUrl, appStoreUrl,
-    defaultCommissionRate, minSettlementAmount, maxCommissionDebtLimit, autoApproveKyc,
-    metaTitle, metaDescription, metaKeywords, googleAnalyticsId,
-    termsContent, privacyContent, refundContent,
-    promoBanners, categoryBanners, videoSpotlights 
-  } = req.body;
-  const SystemSettingsModel = require('../../models').SystemSettings || mongoose.model('SystemSettings');
-  
-  let settings = await SystemSettingsModel.findOne({ key: 'global' });
-  if (!settings) {
-    settings = new SystemSettingsModel({ key: 'global' });
+  try {
+    const { 
+      siteName, logoUrl, faviconUrl, tagline, currencySymbol, timezone, defaultRadius,
+      supportPhone, supportEmail, supportAddress, workingHours,
+      gstRate, platformFee, plusPrice, plusPrice6Months, plusPrice1Year, subscriptionModelActive,
+      announcementText, announcementActive, maintenanceMode, allowBookings,
+      facebookUrl, instagramUrl, twitterUrl, youtubeUrl, whatsappNumber,
+      apkDownloadUrl, playStoreUrl, appStoreUrl,
+      defaultCommissionRate, minSettlementAmount, maxCommissionDebtLimit, autoApproveKyc,
+      metaTitle, metaDescription, metaKeywords, googleAnalyticsId,
+      termsContent, privacyContent, refundContent,
+      promoBanners, categoryBanners, videoSpotlights 
+    } = req.body;
+    
+    let settings = await SystemSettings.findOne({ key: 'global' });
+    if (!settings) {
+      settings = new SystemSettings({ key: 'global' });
+    }
+
+    if (siteName !== undefined) settings.siteName = siteName;
+    if (logoUrl !== undefined) settings.logoUrl = logoUrl;
+    if (faviconUrl !== undefined) settings.faviconUrl = faviconUrl;
+    if (tagline !== undefined) settings.tagline = tagline;
+    if (currencySymbol !== undefined) settings.currencySymbol = currencySymbol;
+    if (timezone !== undefined) settings.timezone = timezone;
+    if (defaultRadius !== undefined) settings.defaultRadius = defaultRadius;
+
+    if (supportPhone !== undefined) settings.supportPhone = supportPhone;
+    if (supportEmail !== undefined) settings.supportEmail = supportEmail;
+    if (supportAddress !== undefined) settings.supportAddress = supportAddress;
+    if (workingHours !== undefined) settings.workingHours = workingHours;
+
+    if (gstRate !== undefined) settings.gstRate = gstRate;
+    if (platformFee !== undefined) settings.platformFee = platformFee;
+    if (plusPrice !== undefined) settings.plusPrice = plusPrice;
+    if (plusPrice6Months !== undefined) settings.plusPrice6Months = plusPrice6Months;
+    if (plusPrice1Year !== undefined) settings.plusPrice1Year = plusPrice1Year;
+    if (subscriptionModelActive !== undefined) settings.subscriptionModelActive = subscriptionModelActive;
+
+    if (announcementText !== undefined) settings.announcementText = announcementText;
+    if (announcementActive !== undefined) settings.announcementActive = announcementActive;
+    if (maintenanceMode !== undefined) settings.maintenanceMode = maintenanceMode;
+    if (allowBookings !== undefined) settings.allowBookings = allowBookings;
+
+    if (facebookUrl !== undefined) settings.facebookUrl = facebookUrl;
+    if (instagramUrl !== undefined) settings.instagramUrl = instagramUrl;
+    if (twitterUrl !== undefined) settings.twitterUrl = twitterUrl;
+    if (youtubeUrl !== undefined) settings.youtubeUrl = youtubeUrl;
+    if (whatsappNumber !== undefined) settings.whatsappNumber = whatsappNumber;
+
+    if (apkDownloadUrl !== undefined) settings.apkDownloadUrl = apkDownloadUrl;
+    if (playStoreUrl !== undefined) settings.playStoreUrl = playStoreUrl;
+    if (appStoreUrl !== undefined) settings.appStoreUrl = appStoreUrl;
+
+    if (defaultCommissionRate !== undefined) settings.defaultCommissionRate = defaultCommissionRate;
+    if (minSettlementAmount !== undefined) settings.minSettlementAmount = minSettlementAmount;
+    if (maxCommissionDebtLimit !== undefined) settings.maxCommissionDebtLimit = maxCommissionDebtLimit;
+    if (autoApproveKyc !== undefined) settings.autoApproveKyc = autoApproveKyc;
+
+    if (metaTitle !== undefined) settings.metaTitle = metaTitle;
+    if (metaDescription !== undefined) settings.metaDescription = metaDescription;
+    if (metaKeywords !== undefined) settings.metaKeywords = metaKeywords;
+    if (googleAnalyticsId !== undefined) settings.googleAnalyticsId = googleAnalyticsId;
+
+    if (termsContent !== undefined) settings.termsContent = termsContent;
+    if (privacyContent !== undefined) settings.privacyContent = privacyContent;
+    if (refundContent !== undefined) settings.refundContent = refundContent;
+
+    if (Array.isArray(promoBanners)) settings.promoBanners = promoBanners;
+    if (Array.isArray(categoryBanners)) settings.categoryBanners = categoryBanners;
+    if (Array.isArray(videoSpotlights)) settings.videoSpotlights = videoSpotlights;
+
+    await settings.save();
+    try { await cache.del('system:settings'); } catch (e) {}
+
+    res.json({ success: true, message: 'Website settings & store configurations saved successfully', data: settings });
+  } catch (err) {
+    logger.error('Failed to update admin settings:', err);
+    throw new AppError(err.message || 'Failed to save system settings', 500);
   }
-
-  if (siteName !== undefined) settings.siteName = siteName;
-  if (logoUrl !== undefined) settings.logoUrl = logoUrl;
-  if (faviconUrl !== undefined) settings.faviconUrl = faviconUrl;
-  if (tagline !== undefined) settings.tagline = tagline;
-  if (currencySymbol !== undefined) settings.currencySymbol = currencySymbol;
-  if (timezone !== undefined) settings.timezone = timezone;
-  if (defaultRadius !== undefined) settings.defaultRadius = defaultRadius;
-
-  if (supportPhone !== undefined) settings.supportPhone = supportPhone;
-  if (supportEmail !== undefined) settings.supportEmail = supportEmail;
-  if (supportAddress !== undefined) settings.supportAddress = supportAddress;
-  if (workingHours !== undefined) settings.workingHours = workingHours;
-
-  if (gstRate !== undefined) settings.gstRate = gstRate;
-  if (platformFee !== undefined) settings.platformFee = platformFee;
-  if (plusPrice !== undefined) settings.plusPrice = plusPrice;
-  if (plusPrice6Months !== undefined) settings.plusPrice6Months = plusPrice6Months;
-  if (plusPrice1Year !== undefined) settings.plusPrice1Year = plusPrice1Year;
-  if (subscriptionModelActive !== undefined) settings.subscriptionModelActive = subscriptionModelActive;
-
-  if (announcementText !== undefined) settings.announcementText = announcementText;
-  if (announcementActive !== undefined) settings.announcementActive = announcementActive;
-  if (maintenanceMode !== undefined) settings.maintenanceMode = maintenanceMode;
-  if (allowBookings !== undefined) settings.allowBookings = allowBookings;
-
-  if (facebookUrl !== undefined) settings.facebookUrl = facebookUrl;
-  if (instagramUrl !== undefined) settings.instagramUrl = instagramUrl;
-  if (twitterUrl !== undefined) settings.twitterUrl = twitterUrl;
-  if (youtubeUrl !== undefined) settings.youtubeUrl = youtubeUrl;
-  if (whatsappNumber !== undefined) settings.whatsappNumber = whatsappNumber;
-
-  if (apkDownloadUrl !== undefined) settings.apkDownloadUrl = apkDownloadUrl;
-  if (playStoreUrl !== undefined) settings.playStoreUrl = playStoreUrl;
-  if (appStoreUrl !== undefined) settings.appStoreUrl = appStoreUrl;
-
-  if (defaultCommissionRate !== undefined) settings.defaultCommissionRate = defaultCommissionRate;
-  if (minSettlementAmount !== undefined) settings.minSettlementAmount = minSettlementAmount;
-  if (maxCommissionDebtLimit !== undefined) settings.maxCommissionDebtLimit = maxCommissionDebtLimit;
-  if (autoApproveKyc !== undefined) settings.autoApproveKyc = autoApproveKyc;
-
-  if (metaTitle !== undefined) settings.metaTitle = metaTitle;
-  if (metaDescription !== undefined) settings.metaDescription = metaDescription;
-  if (metaKeywords !== undefined) settings.metaKeywords = metaKeywords;
-  if (googleAnalyticsId !== undefined) settings.googleAnalyticsId = googleAnalyticsId;
-
-  if (termsContent !== undefined) settings.termsContent = termsContent;
-  if (privacyContent !== undefined) settings.privacyContent = privacyContent;
-  if (refundContent !== undefined) settings.refundContent = refundContent;
-
-  if (Array.isArray(promoBanners)) settings.promoBanners = promoBanners;
-  if (Array.isArray(categoryBanners)) settings.categoryBanners = categoryBanners;
-  if (Array.isArray(videoSpotlights)) settings.videoSpotlights = videoSpotlights;
-
-  await settings.save();
-  await cache.del('system:settings'); // clear cache if any
-
-  res.json({ success: true, message: 'Website settings & store configurations saved successfully', data: settings });
 });
 
 // ── Admin Financial Controls: Provider Manual Wallet Adjustment ─────────────────
