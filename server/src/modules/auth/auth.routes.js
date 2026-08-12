@@ -446,6 +446,10 @@ async function authenticate(req, res, next) {
 
     if (decoded.role === 'staff' || decoded.role === 'admin') {
       User.findByIdAndUpdate(decoded.userId, { isOnline: true, lastActiveAt: new Date() }).exec().catch(() => {});
+      const staffUser = await User.findById(decoded.userId).select('role permissions name email phone').lean();
+      req.user = staffUser || { role: decoded.role, permissions: [] };
+    } else {
+      req.user = { id: decoded.userId, role: decoded.role, permissions: [] };
     }
 
     if (decoded.role === 'provider') {

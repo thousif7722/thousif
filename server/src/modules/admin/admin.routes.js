@@ -362,7 +362,9 @@ router.post('/announcements', authorize('admin', 'staff'), async (req, res) => {
 
 // ── Dashboard Analytics ────────────────────────────────────────────────────────
 router.get('/dashboard', async (req, res) => {
-  const hasFinancials = req.user.role === 'admin' || (Array.isArray(req.user.permissions) && req.user.permissions.includes('manage_financials'));
+  const role = req.userRole || req.user?.role;
+  const permissions = req.user?.permissions || [];
+  const hasFinancials = role === 'admin' || (Array.isArray(permissions) && permissions.includes('manage_financials'));
   const cacheKey = `admin:dashboard:metrics:${hasFinancials ? 'fin' : 'nofin'}`;
   const cached = await cache.get(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
@@ -596,7 +598,9 @@ router.get('/providers', requirePermission('manage_providers'), async (req, res)
     Provider.countDocuments(filter),
   ]);
 
-  const hasFinancials = req.user.role === 'admin' || (Array.isArray(req.user.permissions) && req.user.permissions.includes('manage_financials'));
+  const role = req.userRole || req.user?.role;
+  const permissions = req.user?.permissions || [];
+  const hasFinancials = role === 'admin' || (Array.isArray(permissions) && permissions.includes('manage_financials'));
   if (!hasFinancials) {
     providers.forEach(p => {
       if (p.earnings) {
