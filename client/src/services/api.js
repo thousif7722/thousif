@@ -116,7 +116,11 @@ function clearAuthAndRedirect() {
 // ── Helper methods ─────────────────────────────────────────────────────────────
 export const apiService = {
   // Auth
+  googleAuthenticate: (data) => api.post('/auth/google-authenticate', data),
+  completeRegistration: (data) => api.post('/auth/complete-registration', data),
   firebaseLogin: (data) => api.post('/auth/firebase-login', data),
+  linkGoogleAccount: (data) => api.post('/auth/link-google-account', data),
+  becomeProvider: (data) => api.post('/auth/become-provider', data),
   activatePlus: (data) => api.post('/auth/plus', data),
   updateProfile: (data) => api.put('/auth/profile', data),
 

@@ -1,13 +1,14 @@
 'use strict';
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const Joi = require('joi');
 const { User, Provider } = require('../../models');
 const { cache } = require('../../config/redis');
 const { AppError } = require('../../utils/errors');
 const { validateBody } = require('../../middleware/validate');
 const { getFirebaseAdmin } = require('../../services/firebase.service');
 const logger = require('../../utils/logger');
-const Joi = require('joi');
 
 const router = express.Router();
 
@@ -19,11 +20,22 @@ const firebaseLoginSchema = Joi.object({
   referralCode: Joi.string().optional(),
 });
 
+const googleAuthSchema = Joi.object({
+  idToken: Joi.string().required(),
+});
+
+const completeRegSchema = Joi.object({
+  idToken: Joi.string().required(),
+  role: Joi.string().valid('customer', 'provider').required(),
+  name: Joi.string().min(2).max(100).optional(),
+  referralCode: Joi.string().optional(),
+});
+
 const refreshSchema = Joi.object({
   refreshToken: Joi.string().required(),
 });
 
-// ── OTP Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function normalizeIndianPhone(phoneNumber) {
   const digits = String(phoneNumber || '').replace(/\D/g, '');
   const phone = digits.length === 12 && digits.startsWith('91')
@@ -35,17 +47,18 @@ function normalizeIndianPhone(phoneNumber) {
   }
   return phone;
 }
+
 async function verifyFirebaseToken(idToken) {
   // Support local dev testing bypass token when not running in strict production
   if (idToken && typeof idToken === 'string' && idToken.startsWith('dev-bypass-login-') && process.env.NODE_ENV !== 'production') {
-    const rawPhone = idToken.replace('dev-bypass-login-', '');
-    const isGoogle = rawPhone.startsWith('G-');
-    const phone = isGoogle ? rawPhone : (rawPhone.length === 10 ? rawPhone : normalizeIndianPhone(rawPhone));
+    const raw = idToken.replace('dev-bypass-login-', '');
+    const isGoogle = raw.startsWith('G-');
     return {
-      firebaseUid: `dev-uid-${phone}`,
-      phone: phone,
-      email: isGoogle ? `${phone.toLowerCase()}@dev.local` : undefined,
-      name: isGoogle ? 'Dev User' : undefined,
+      firebaseUid: `dev-uid-${raw}`,
+      phone: isGoogle ? null : (raw.length === 10 ? raw : null),
+      email: isGoogle ? `${raw.toLowerCase()}@dev.local` : null,
+      name: isGoogle ? 'Dev Google User' : 'Dev User',
+      avatar: isGoogle ? 'https://lh3.googleusercontent.com/a/default-user' : null,
     };
   }
 
@@ -56,23 +69,12 @@ async function verifyFirebaseToken(idToken) {
 
   try {
     const decoded = await admin.auth().verifyIdToken(idToken);
-    if (!decoded.phone_number && !decoded.email) {
-      throw new AppError('Firebase token does not include phone or email', 400);
-    }
-    
-    let phone;
-    if (decoded.phone_number) {
-      phone = normalizeIndianPhone(decoded.phone_number);
-    } else {
-      phone = `G-${decoded.uid.substring(0, 8)}`;
-    }
-
     return {
       firebaseUid: decoded.uid,
-      phone: phone,
-      email: decoded.email,
-      name: decoded.name,
-      avatar: decoded.picture,
+      phone: decoded.phone_number ? normalizeIndianPhone(decoded.phone_number) : null,
+      email: decoded.email || null,
+      name: decoded.name || decoded.displayName || null,
+      avatar: decoded.picture || decoded.photoURL || null,
     };
   } catch (err) {
     if (err instanceof AppError) throw err;
@@ -80,9 +82,6 @@ async function verifyFirebaseToken(idToken) {
     throw new AppError('Invalid or expired Firebase authentication token', 401);
   }
 }
-
-// ── JWT Helpers ────────────────────────────────────────────────────────────────
-const crypto = require('crypto');
 
 function generateTokens(userId, role, sessionId = crypto.randomUUID()) {
   const accessToken = jwt.sign(
@@ -102,10 +101,178 @@ async function storeRefreshToken(userId, sessionId, refreshToken) {
   await cache.set(`refresh:${userId}:${sessionId}`, refreshToken, 30 * 24 * 60 * 60);
 }
 
+async function formatUserResponse(user) {
+  let providerStatus = 'not_applicable';
+  let providerId = null;
+
+  if (user.role === 'provider') {
+    const provider = await Provider.findOne({ userId: user._id }).select('_id approvalStatus').lean();
+    if (provider) {
+      providerStatus = provider.approvalStatus;
+      providerId = provider._id.toString();
+    } else {
+      providerStatus = 'pending';
+    }
+  }
+
+  return {
+    id: user._id,
+    firebaseUid: user.firebaseUid,
+    phone: user.phone || null,
+    name: user.name || '',
+    email: user.email || '',
+    avatar: user.avatar || '',
+    photoURL: user.avatar || '',
+    role: user.role,
+    status: user.status || 'active',
+    providerStatus: providerStatus,
+    providerId: providerId,
+    permissions: user.permissions || [],
+    walletBalance: user.walletBalance || 0,
+    isPlusMember: Boolean(user.subscription?.isPlusMember),
+    subscription: user.subscription,
+  };
+}
+
 // ── Routes ─────────────────────────────────────────────────────────────────────
 
 /**
- * POST /auth/firebase-login
+ * POST /auth/google-authenticate
+ * Authenticates Firebase Google OAuth Token.
+ * Existing user -> returns user info & tokens.
+ * New user -> returns isNewUser: true (does NOT create DB record, awaits role selection screen).
+ */
+router.post('/google-authenticate', validateBody(googleAuthSchema), async (req, res) => {
+  const { idToken } = req.body;
+  const fbUser = await verifyFirebaseToken(idToken);
+  const { firebaseUid, email, name, avatar } = fbUser;
+
+  // Search existing user by firebaseUid OR email
+  let user = await User.findOne({
+    $or: [
+      { firebaseUid },
+      ...(email ? [{ email }] : [])
+    ]
+  });
+
+  if (!user) {
+    return res.json({
+      success: true,
+      isNewUser: true,
+      firebaseUser: {
+        firebaseUid,
+        email: email || '',
+        name: name || '',
+        avatar: avatar || '',
+      }
+    });
+  }
+
+  if (user.isBlocked || user.status === 'blocked') {
+    throw new AppError('Your account has been blocked. Contact support.', 403);
+  }
+
+  // Auto-link Google credentials to existing account if missing
+  let updated = false;
+  if (!user.firebaseUid) { user.firebaseUid = firebaseUid; updated = true; }
+  if (!user.email && email) { user.email = email; updated = true; }
+  if (!user.name && name) { user.name = name; updated = true; }
+  if (!user.avatar && avatar) { user.avatar = avatar; updated = true; }
+  if (updated) await user.save();
+
+  const formattedUser = await formatUserResponse(user);
+  const targetId = user.role === 'provider' && formattedUser.providerId ? formattedUser.providerId : user._id;
+  const tokens = generateTokens(targetId, user.role);
+  await storeRefreshToken(targetId, tokens.sessionId, tokens.refreshToken);
+
+  return res.json({
+    success: true,
+    isNewUser: false,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    user: formattedUser,
+  });
+});
+
+/**
+ * POST /auth/complete-registration
+ * Completes registration for new user after role selection.
+ */
+router.post('/complete-registration', validateBody(completeRegSchema), async (req, res) => {
+  const { idToken, role, name, referralCode } = req.body;
+  const fbUser = await verifyFirebaseToken(idToken);
+  const { firebaseUid, email, avatar } = fbUser;
+  const displayName = name?.trim() || fbUser.name || '';
+
+  let user = await User.findOne({
+    $or: [
+      { firebaseUid },
+      ...(email ? [{ email }] : [])
+    ]
+  });
+
+  let isNewUser = false;
+  if (!user) {
+    isNewUser = true;
+    user = new User({
+      firebaseUid,
+      email: email || undefined,
+      name: displayName,
+      avatar: avatar || undefined,
+      role: role,
+      status: 'active',
+      referralCode: `REF${Date.now().toString(36).toUpperCase()}`
+    });
+    await user.save();
+  } else {
+    user.role = role;
+    if (!user.firebaseUid) user.firebaseUid = firebaseUid;
+    if (displayName && !user.name) user.name = displayName;
+    await user.save();
+  }
+
+  let providerRecord = null;
+  if (role === 'provider') {
+    providerRecord = await Provider.findOne({ userId: user._id });
+    if (!providerRecord) {
+      providerRecord = await Provider.create({
+        userId: user._id,
+        email: email || undefined,
+        name: displayName || 'Service Provider',
+        avatar: avatar || undefined,
+        approvalStatus: 'pending',
+        currentLocation: { type: 'Point', coordinates: [0, 0] }
+      });
+    }
+  }
+
+  // Handle referral reward for customer
+  if (referralCode && isNewUser && role === 'customer') {
+    const referrer = await User.findOne({ referralCode });
+    if (referrer && referrer._id.toString() !== user._id.toString()) {
+      user.referredBy = referrer._id;
+      await user.save();
+      const { notificationQueue } = require('../../jobs');
+      notificationQueue.add('referral_reward', { referrerId: referrer._id, newUserId: user._id });
+    }
+  }
+
+  const formattedUser = await formatUserResponse(user);
+  const targetId = role === 'provider' && providerRecord ? providerRecord._id : user._id;
+  const tokens = generateTokens(targetId, role);
+  await storeRefreshToken(targetId, tokens.sessionId, tokens.refreshToken);
+
+  return res.json({
+    success: true,
+    isNewUser: true,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    user: formattedUser,
+  });
+});
+
+/**
+ * POST /auth/firebase-login (Backward Compatible Phone OTP / General Firebase Login)
  */
 router.post('/firebase-login', validateBody(firebaseLoginSchema), async (req, res) => {
   const { idToken, role, name, referralCode } = req.body;
@@ -129,17 +296,16 @@ router.post('/firebase-login', validateBody(firebaseLoginSchema), async (req, re
     displayName = name || firebaseUser.name;
   }
 
-  if (role === 'provider' && phone.startsWith('G-')) {
-    throw new AppError('Providers must sign up using phone number authentication, not just Google.', 400);
-  }
-
-  // Cross-Identity Linking logic: search by phone, email, OR firebaseUid
-  let user = await User.findOne({ 
-    $or: [{ phone }, ...(email ? [{ email }] : []), { firebaseUid }] 
+  // Search existing account by phone, email, OR firebaseUid
+  let user = await User.findOne({
+    $or: [
+      ...(phone ? [{ phone }] : []),
+      ...(email ? [{ email }] : []),
+      { firebaseUid }
+    ]
   });
 
   let isNewUser = false;
-  
   if (!user) {
     isNewUser = true;
     user = new User({
@@ -148,17 +314,15 @@ router.post('/firebase-login', validateBody(firebaseLoginSchema), async (req, re
       email,
       avatar,
       name: displayName || '',
-      role: 'customer',
-      referralCode: `REF${phone.slice(-4)}${Date.now().toString(36).toUpperCase()}`
+      role: role || 'customer',
+      referralCode: `REF${phone ? phone.slice(-4) : Date.now().toString(36).toUpperCase()}`
     });
   } else {
-    // Check if we need to link data
     if (!user.firebaseUid) user.firebaseUid = firebaseUid;
     if (!user.name && displayName) user.name = displayName;
     if (!user.email && email) user.email = email;
     if (!user.avatar && avatar) user.avatar = avatar;
-    // Upgrade mock Google phone if user is linking to a real Phone Auth identity
-    if (user.phone && user.phone.startsWith('G-') && !phone.startsWith('G-')) {
+    if (user.phone && user.phone.startsWith('G-') && phone && !phone.startsWith('G-')) {
       user.phone = phone;
     }
   }
@@ -167,18 +331,19 @@ router.post('/firebase-login', validateBody(firebaseLoginSchema), async (req, re
     throw new AppError('Your account has been blocked. Contact support.', 403);
   }
 
-  // Only does ONE save representing the entire unified profile update
   await user.save();
 
-  if (role === 'provider') {
-    let provider = await Provider.findOne({ userId: user._id });
+  let provider = null;
+  if (role === 'provider' || user.role === 'provider') {
+    provider = await Provider.findOne({ userId: user._id });
     if (!provider) {
       provider = await Provider.create({
         userId: user._id,
         phone,
         email,
         avatar,
-        name: displayName || `Provider_${phone.slice(-4)}`,
+        name: displayName || `Provider_${phone ? phone.slice(-4) : 'User'}`,
+        approvalStatus: 'pending',
         currentLocation: { type: 'Point', coordinates: [0, 0] }
       });
       isNewUser = true;
@@ -192,28 +357,9 @@ router.post('/firebase-login', validateBody(firebaseLoginSchema), async (req, re
     if (provider.isBlocked) {
       throw new AppError('Your provider account is blocked. Contact support.', 403);
     }
-    
-    const tokens = generateTokens(provider._id, 'provider');
-    await storeRefreshToken(provider._id, tokens.sessionId, tokens.refreshToken);
-    
-    return res.json({
-      success: true,
-      isNewUser,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      user: {
-        id: provider._id,
-        phone: provider.phone,
-        name: provider.name,
-        role: 'provider',
-        approvalStatus: provider.approvalStatus,
-        avatar: provider.avatar,
-      },
-    });
   }
 
-  // Handle referral reward for customers
-  if (referralCode && isNewUser) {
+  if (referralCode && isNewUser && user.role === 'customer') {
     const referrer = await User.findOne({ referralCode });
     if (referrer && referrer._id.toString() !== user._id.toString()) {
       user.referredBy = referrer._id;
@@ -223,45 +369,123 @@ router.post('/firebase-login', validateBody(firebaseLoginSchema), async (req, re
     }
   }
 
-  const tokens = generateTokens(user._id, user.role);
-  await storeRefreshToken(user._id, tokens.sessionId, tokens.refreshToken);
+  const formattedUser = await formatUserResponse(user);
+  const targetId = user.role === 'provider' && provider ? provider._id : user._id;
+  const tokens = generateTokens(targetId, user.role);
+  await storeRefreshToken(targetId, tokens.sessionId, tokens.refreshToken);
 
   res.json({
     success: true,
     isNewUser,
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    user: {
-      id: user._id,
+    user: formattedUser,
+  });
+});
+
+/**
+ * POST /auth/link-google-account
+ * Allows an existing phone user to securely link their Google account.
+ */
+router.post('/link-google-account', authenticate, async (req, res) => {
+  const { googleIdToken } = req.body;
+  if (!googleIdToken) throw new AppError('Google ID token is required', 400);
+
+  const googleUser = await verifyFirebaseToken(googleIdToken);
+  const user = await User.findById(req.userId);
+  if (!user) throw new AppError('User not found', 404);
+
+  // Check if Google account is linked to another user
+  const existingGoogleUser = await User.findOne({
+    _id: { $ne: user._id },
+    $or: [
+      { firebaseUid: googleUser.firebaseUid },
+      ...(googleUser.email ? [{ email: googleUser.email }] : [])
+    ]
+  });
+
+  if (existingGoogleUser) {
+    throw new AppError('This Google account is already linked to another OneWayFix user account.', 400);
+  }
+
+  user.firebaseUid = googleUser.firebaseUid;
+  if (googleUser.email && !user.email) user.email = googleUser.email;
+  if (googleUser.avatar && !user.avatar) user.avatar = googleUser.avatar;
+  if (googleUser.name && !user.name) user.name = googleUser.name;
+  await user.save();
+
+  if (user.role === 'provider' || req.isProvider) {
+    await Provider.findOneAndUpdate(
+      { userId: user._id },
+      { email: user.email, avatar: user.avatar, name: user.name }
+    );
+  }
+
+  const formattedUser = await formatUserResponse(user);
+  res.json({
+    success: true,
+    message: 'Google account linked successfully!',
+    user: formattedUser,
+  });
+});
+
+/**
+ * POST /auth/become-provider
+ * Upgrades customer profile to provider (requires KYC & Admin Approval).
+ */
+router.post('/become-provider', authenticate, async (req, res) => {
+  const user = await User.findById(req.userId);
+  if (!user) throw new AppError('User not found', 404);
+
+  if (user.role === 'provider') {
+    throw new AppError('Account is already a Service Provider profile.', 400);
+  }
+
+  let provider = await Provider.findOne({ userId: user._id });
+  if (!provider) {
+    provider = await Provider.create({
+      userId: user._id,
       phone: user.phone,
-      name: user.name,
       email: user.email,
-      role: user.role,
-      permissions: user.permissions || [],
+      name: user.name || 'Service Provider',
       avatar: user.avatar,
-      walletBalance: user.walletBalance,
-      isPlusMember: user.subscription?.plan === 'premium',
-    },
+      approvalStatus: 'pending',
+      currentLocation: { type: 'Point', coordinates: [0, 0] }
+    });
+  }
+
+  user.role = 'provider';
+  await user.save();
+
+  const formattedUser = await formatUserResponse(user);
+  const tokens = generateTokens(provider._id, 'provider');
+  await storeRefreshToken(provider._id, tokens.sessionId, tokens.refreshToken);
+
+  res.json({
+    success: true,
+    message: 'Profile converted to Provider. Complete KYC for approval.',
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    user: formattedUser,
   });
 });
 
 router.post('/send-otp', (req, res) => {
   res.status(410).json({
     success: false,
-    error: 'Server OTP SMS has been removed. Use Firebase phone authentication.',
+    error: 'Server OTP SMS has been removed. Use Firebase authentication.',
   });
 });
 
 router.post('/verify-otp', (req, res) => {
   res.status(410).json({
     success: false,
-    error: 'Server OTP verification has been removed. Use /auth/firebase-login with a Firebase ID token.',
+    error: 'Server OTP verification has been removed. Use /auth/google-authenticate or /auth/firebase-login.',
   });
 });
 
 /**
  * POST /auth/refresh
- * Rotate refresh tokens for security
  */
 router.post('/refresh', validateBody(refreshSchema), async (req, res) => {
   const { refreshToken } = req.body;
@@ -289,13 +513,10 @@ router.post('/refresh', validateBody(refreshSchema), async (req, res) => {
 
 /**
  * POST /auth/plus
- * Activate ServiceHub Plus Membership
- * Checks system settings toggle, handles Razorpay / Wallet / UPI payment, and saves to DB.
  */
 router.post('/plus', authenticate, async (req, res) => {
   const { razorpayOrderId, razorpayPaymentId, razorpaySignature, planMonths = 6, paymentMethod = 'online' } = req.body;
 
-  // 1. Check System Settings toggle
   const SystemSettingsModel = require('../../models').SystemSettings || mongoose.model('SystemSettings');
   const globalSettings = await SystemSettingsModel.findOne({ key: 'global' });
   if (globalSettings && globalSettings.subscriptionModelActive === false) {
@@ -308,14 +529,12 @@ router.post('/plus', authenticate, async (req, res) => {
   const months = Math.min(Math.max(parseInt(planMonths) || 6, 1), 12);
   const planPrice = months === 12 ? (globalSettings?.plusPrice1Year || 499) : (globalSettings?.plusPrice6Months || 299);
 
-  // 2. Handle Payment Verification
   if (paymentMethod === 'wallet') {
     if ((user.walletBalance || 0) < planPrice) {
-      throw new AppError(`Insufficient wallet balance (₹${user.walletBalance || 0}). Plan price is ₹${planPrice}. Please add money to wallet.`, 400);
+      throw new AppError(`Insufficient wallet balance (₹${user.walletBalance || 0}). Plan price is ₹${planPrice}.`, 400);
     }
     user.walletBalance = (user.walletBalance || 0) - planPrice;
   } else if (razorpayOrderId && razorpayPaymentId && razorpaySignature) {
-    const crypto = require('crypto');
     const secret = process.env.RAZORPAY_KEY_SECRET;
     if (secret) {
       const expectedSignature = crypto
@@ -344,28 +563,17 @@ router.post('/plus', authenticate, async (req, res) => {
   await user.save();
 
   logger.info(`ServiceHub Plus activated for user ${req.userId} (${months} months)`);
+  const formattedUser = await formatUserResponse(user);
 
   res.json({
     success: true,
     message: `Welcome to ServiceHub Plus! Active for ${months} months.`,
-    user: {
-      id: user._id,
-      phone: user.phone,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      permissions: user.permissions || [],
-      avatar: user.avatar,
-      walletBalance: user.walletBalance,
-      isPlusMember: true,
-      subscription: user.subscription,
-    }
+    user: formattedUser,
   });
 });
 
 /**
  * PUT /auth/profile
- * Update logged-in user profile (Name, Email)
  */
 router.put('/profile', authenticate, async (req, res) => {
   const { name, email } = req.body;
@@ -382,20 +590,11 @@ router.put('/profile', authenticate, async (req, res) => {
     await Provider.findOneAndUpdate({ userId: user._id }, { name: user.name, email: user.email });
   }
 
+  const formattedUser = await formatUserResponse(user);
   res.json({
     success: true,
     message: 'Profile updated successfully',
-    user: {
-      id: user._id,
-      phone: user.phone,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      permissions: user.permissions || [],
-      avatar: user.avatar,
-      walletBalance: user.walletBalance,
-      isPlusMember: user.subscription?.plan === 'premium',
-    },
+    user: formattedUser,
   });
 });
 
@@ -421,13 +620,13 @@ router.post('/logout', async (req, res) => {
         }
       }
     } catch (e) {
-      logger.debug('Logout with invalid/expired token — ignoring:', e.message);
+      logger.debug('Logout token check ignored:', e.message);
     }
   }
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
-// ── Auth Middleware (exported for use in other routes) ─────────────────────────
+// ── Auth Middleware ────────────────────────────────────────────────────────────
 async function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -436,7 +635,6 @@ async function authenticate(req, res, next) {
     }
     const token = authHeader.split(' ')[1];
 
-    // Check blacklist
     const isBlacklisted = await cache.get(`blacklist:${token}`);
     if (isBlacklisted) throw new AppError('Token has been revoked', 401);
 
@@ -485,19 +683,37 @@ function authorize(...roles) {
   };
 }
 
+async function requireProviderApproval(req, res, next) {
+  try {
+    if (req.userRole !== 'provider' && !req.isProvider) {
+      return next(new AppError('Unauthorized: Provider access required', 403));
+    }
+    const provider = await Provider.findOne({ userId: req.userId }).select('approvalStatus isBlocked').lean();
+    if (!provider) {
+      return next(new AppError('Provider profile not found', 404));
+    }
+    if (provider.isBlocked) {
+      return next(new AppError('Your provider account has been blocked or suspended by administrator.', 403));
+    }
+    if (provider.approvalStatus !== 'approved') {
+      return next(new AppError(`Provider access restricted. Current account status: ${provider.approvalStatus}. Admin approval required.`, 403));
+    }
+    req.provider = provider;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
 function requirePermission(permission) {
   return async (req, res, next) => {
-    // Admin (Founder) has all permissions
     if (req.userRole === 'admin') return next();
-    
-    // Staff must have the specific permission
     if (req.userRole === 'staff') {
       const user = await User.findById(req.userId).select('permissions').lean();
       if (user && user.permissions && user.permissions.includes(permission)) {
         return next();
       }
     }
-    
     return next(new AppError(`Permission denied: Requires ${permission}`, 403));
   };
 }
@@ -505,4 +721,5 @@ function requirePermission(permission) {
 module.exports = router;
 module.exports.authenticate = authenticate;
 module.exports.authorize = authorize;
+module.exports.requireProviderApproval = requireProviderApproval;
 module.exports.requirePermission = requirePermission;

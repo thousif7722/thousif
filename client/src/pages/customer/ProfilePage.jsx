@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { selectUser, logout, updateUser } from '@/store/slices/authSlice';
+import { selectUser, logout, updateUser, linkGoogleAccount } from '@/store/slices/authSlice';
 import Header from '@/components/common/Header';
 import Footer from '@/components/common/Footer';
 import { User, Phone, Mail, Wallet, Star, Tag, LogOut, ChevronRight, Edit3, Check } from 'lucide-react';
@@ -114,6 +114,24 @@ export default function ProfilePage() {
           </div>
         )}
 
+        {/* Link Google Account option for phone users */}
+        {!user?.email && (
+          <div className="card p-5 bg-white border border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Link Google Account</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Link your Google account for faster 1-click login</p>
+              </div>
+              <button
+                onClick={() => dispatch(linkGoogleAccount())}
+                className="flex items-center gap-2 bg-slate-900 text-white font-bold text-xs px-4 py-2.5 rounded-xl hover:bg-slate-800 transition-colors"
+              >
+                Link Google
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Menu items */}
         <div className="card overflow-hidden">
           {menuItems.map(({ icon: Icon, label, action }, i) => (
@@ -127,6 +145,26 @@ export default function ProfilePage() {
               <ChevronRight size={16} className="text-slate-300" />
             </button>
           ))}
+          
+          {user?.role === 'customer' && (
+            <button
+              onClick={async () => {
+                try {
+                  const res = await apiService.becomeProvider();
+                  toast.success(res.data.message || 'Profile upgraded!');
+                  dispatch(updateUser(res.data.user));
+                  navigate('/provider/pending');
+                } catch (err) {
+                  toast.error(err.response?.data?.error || 'Failed to become provider');
+                }
+              }}
+              className="w-full flex items-center gap-4 px-5 py-4 text-left border-t border-slate-100 hover:bg-blue-50 text-blue-600 transition-colors"
+            >
+              <span className="text-lg">🔧</span>
+              <span className="flex-1 text-sm font-bold">Become a Service Provider</span>
+              <ChevronRight size={16} className="text-blue-400" />
+            </button>
+          )}
         </div>
 
         {/* Logout */}

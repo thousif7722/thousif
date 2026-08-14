@@ -90,8 +90,30 @@ export async function signOutFirebase() {
 
 export async function signInWithGoogleService() {
   ensureFirebaseReady();
-  const result = await signInWithPopup(auth, googleProvider);
-  return result.user.getIdToken();
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const idToken = await result.user.getIdToken();
+    return {
+      idToken,
+      user: {
+        uid: result.user.uid,
+        email: result.user.email,
+        displayName: result.user.displayName,
+        photoURL: result.user.photoURL,
+      }
+    };
+  } catch (err) {
+    if (err.code === 'auth/popup-closed-by-user') {
+      throw new Error('Google Sign-In popup was closed before completing authentication.');
+    }
+    if (err.code === 'auth/cancelled-popup-request') {
+      throw new Error('Google Sign-In popup request was cancelled.');
+    }
+    if (err.code === 'auth/account-exists-with-different-credential') {
+      throw new Error('An account already exists with the same email address using a different sign-in method.');
+    }
+    throw err;
+  }
 }
 
 export { auth, analytics, isFirebaseConfigured, resetRecaptcha };

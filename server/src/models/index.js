@@ -21,10 +21,10 @@ const AddressSchema = new mongoose.Schema({
 }, { _id: true });
 
 const UserSchema = new mongoose.Schema({
-  phone: { type: String, required: true, unique: true, index: true },
+  phone: { type: String, unique: true, sparse: true, index: true },
   firebaseUid: { type: String, unique: true, sparse: true, index: true },
   name: { type: String, trim: true },
-  email: { type: String, lowercase: true, sparse: true },
+  email: { type: String, lowercase: true, sparse: true, index: true },
   avatar: String,
   role: { type: String, enum: ['customer', 'provider', 'admin', 'staff', 'manager', 'team_leader', 'intern'], default: 'customer' },
   permissions: [{ type: String }], // Used for 'staff' role
@@ -108,7 +108,7 @@ const EarningsSchema = new mongoose.Schema({
 
 const ProviderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
-  phone: { type: String, required: true, unique: true },
+  phone: { type: String, unique: true, sparse: true, index: true },
   name: { type: String, required: true, trim: true },
   email: { type: String, lowercase: true },
   avatar: String,

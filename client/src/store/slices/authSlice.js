@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '@/services/api';
+import api, { apiService } from '@/services/api';
 import { confirmPhoneOtp, sendPhoneOtp, signOutFirebase, signInWithGoogleService, isFirebaseConfigured } from '@/services/firebase';
 import toast from 'react-hot-toast';
 
@@ -41,7 +41,7 @@ export const verifyOTP = createAsyncThunk('auth/verifyOTP', async (payload, { re
         }
       }
     }
-    const res = await api.post('/auth/firebase-login', {
+    const res = await apiService.firebaseLogin({
       idToken,
       role: payload.role,
       name: payload.name,
@@ -57,33 +57,76 @@ export const verifyOTP = createAsyncThunk('auth/verifyOTP', async (payload, { re
   }
 });
 
-export const loginWithGoogle = createAsyncThunk('auth/loginWithGoogle', async (role, { rejectWithValue }) => {
+export const loginWithGoogle = createAsyncThunk('auth/loginWithGoogle', async (_, { rejectWithValue }) => {
   try {
     let idToken;
+    let googleUserData = null;
+
     if (import.meta.env.PROD && isFirebaseConfigured) {
-      idToken = await signInWithGoogleService();
+      const googleRes = await signInWithGoogleService();
+      idToken = googleRes.idToken;
+      googleUserData = googleRes.user;
     } else {
       try {
-        idToken = await signInWithGoogleService();
+        const googleRes = await signInWithGoogleService();
+        idToken = googleRes.idToken;
+        googleUserData = googleRes.user;
       } catch (e) {
         if (import.meta.env.DEV) {
           idToken = 'dev-bypass-login-G-googledev';
+          googleUserData = { uid: 'dev-google-uid', email: 'dev-google@onewayfix.local', displayName: 'Dev Google User' };
         } else {
           throw e;
         }
       }
     }
-    const res = await api.post('/auth/firebase-login', {
-      idToken,
-      role: role || 'customer',
-    });
+
+    const res = await apiService.googleAuthenticate({ idToken });
+
+    if (res.data.isNewUser) {
+      return {
+        isNewUser: true,
+        pendingGoogleUser: {
+          idToken,
+          ...(res.data.firebaseUser || googleUserData)
+        }
+      };
+    }
+
+    const { accessToken, refreshToken, user } = res.data;
+    localStorage.setItem('accessToken', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+    localStorage.setItem('user', JSON.stringify(user));
+    return { isNewUser: false, accessToken, refreshToken, user };
+  } catch (err) {
+    return rejectWithValue(err.response?.data?.error || err.message || 'Google authentication failed');
+  }
+});
+
+export const completeRegistration = createAsyncThunk('auth/completeRegistration', async ({ idToken, role, name, referralCode }, { rejectWithValue }) => {
+  try {
+    const res = await apiService.completeRegistration({ idToken, role, name, referralCode });
     const { accessToken, refreshToken, user } = res.data;
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
     localStorage.setItem('user', JSON.stringify(user));
     return res.data;
   } catch (err) {
-    return rejectWithValue(err.response?.data?.error || err.message || 'Google login failed');
+    return rejectWithValue(err.response?.data?.error || err.message || 'Registration failed');
+  }
+});
+
+export const linkGoogleAccount = createAsyncThunk('auth/linkGoogleAccount', async (_, { rejectWithValue }) => {
+  try {
+    const googleRes = await signInWithGoogleService();
+    const res = await apiService.linkGoogleAccount({ googleIdToken: googleRes.idToken });
+    const { user } = res.data;
+    const existingUser = (() => { try { return JSON.parse(localStorage.getItem('user')) || {}; } catch { return {}; } })();
+    const updatedUser = { ...existingUser, ...user };
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+    return updatedUser;
+  } catch (err) {
+    return rejectWithValue(err.response?.data?.error || err.message || 'Failed to link Google account');
   }
 });
 
@@ -120,6 +163,8 @@ const authSlice = createSlice({
     accessToken: localStorage.getItem('accessToken'),
     otpSent: false,
     otpPhone: null,
+    needsRoleSelection: false,
+    pendingGoogleUser: null,
     loading: false,
     error: null,
   },
@@ -127,6 +172,7 @@ const authSlice = createSlice({
     setUser(state, action) { state.user = action.payload; },
     clearError(state) { state.error = null; },
     resetOtp(state) { state.otpSent = false; state.otpPhone = null; },
+    resetRoleSelection(state) { state.needsRoleSelection = false; state.pendingGoogleUser = null; },
     updateUser(state, action) { state.user = { ...state.user, ...action.payload }; },
   },
   extraReducers: (builder) => {
@@ -157,18 +203,51 @@ const authSlice = createSlice({
       .addCase(loginWithGoogle.pending, (state) => { state.loading = true; state.error = null; })
       .addCase(loginWithGoogle.fulfilled, (state, action) => {
         state.loading = false;
-        state.user = action.payload.user;
-        state.accessToken = action.payload.accessToken;
+        if (action.payload.isNewUser) {
+          state.needsRoleSelection = true;
+          state.pendingGoogleUser = action.payload.pendingGoogleUser;
+        } else {
+          state.user = action.payload.user;
+          state.accessToken = action.payload.accessToken;
+          state.needsRoleSelection = false;
+          state.pendingGoogleUser = null;
+        }
       })
       .addCase(loginWithGoogle.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
         toast.error(action.payload);
       })
+      .addCase(completeRegistration.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(completeRegistration.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload.user;
+        state.accessToken = action.payload.accessToken;
+        state.needsRoleSelection = false;
+        state.pendingGoogleUser = null;
+        toast.success(`Welcome to OneWayFix, ${action.payload.user.name || 'Partner'}!`);
+      })
+      .addCase(completeRegistration.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+        toast.error(action.payload);
+      })
+      .addCase(linkGoogleAccount.pending, (state) => { state.loading = true; })
+      .addCase(linkGoogleAccount.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload;
+        toast.success('Google account linked successfully!');
+      })
+      .addCase(linkGoogleAccount.rejected, (state, action) => {
+        state.loading = false;
+        toast.error(action.payload);
+      })
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
         state.accessToken = null;
         state.otpSent = false;
+        state.needsRoleSelection = false;
+        state.pendingGoogleUser = null;
       })
       .addCase(activatePlusMembership.pending, (state) => {
         state.loading = true;
@@ -185,9 +264,11 @@ const authSlice = createSlice({
   },
 });
 
-export const { setUser, clearError, resetOtp, updateUser } = authSlice.actions;
+export const { setUser, clearError, resetOtp, resetRoleSelection, updateUser } = authSlice.actions;
 export const selectUser = (state) => state.auth.user;
 export const selectIsAuthenticated = (state) => !!state.auth.user;
 export const selectAuthLoading = (state) => state.auth.loading;
 export const selectUserRole = (state) => state.auth.user?.role;
+export const selectNeedsRoleSelection = (state) => state.auth.needsRoleSelection;
+export const selectPendingGoogleUser = (state) => state.auth.pendingGoogleUser;
 export default authSlice.reducer;

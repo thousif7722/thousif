@@ -21,10 +21,12 @@ const TrackingPage     = lazy(() => import('@/pages/customer/TrackingPage'));
 const PaymentPage      = lazy(() => import('@/pages/customer/PaymentPage'));
 const PlusMembership   = lazy(() => import('@/pages/customer/PlusMembership'));
 const ProfilePage      = lazy(() => import('@/pages/customer/ProfilePage'));
+
 const ProviderDashboard= lazy(() => import('@/pages/provider/ProviderDashboard'));
 const ProviderBookings = lazy(() => import('@/pages/provider/ProviderBookings'));
 const ProviderEarnings = lazy(() => import('@/pages/provider/ProviderEarnings'));
 const ProviderProfile  = lazy(() => import('@/pages/provider/ProviderProfile'));
+const ProviderPendingPage = lazy(() => import('@/pages/provider/ProviderPendingPage'));
 const MaterialsBilling = lazy(() => import('@/pages/provider/MaterialsBilling'));
 const ProviderComplaints = lazy(() => import('@/pages/provider/ProviderComplaints'));
 const ProviderLockoutGuard = lazy(() => import('@/components/provider/ProviderLockoutGuard'));
@@ -50,13 +52,23 @@ const PublicServicePage = lazy(() => import('@/pages/public/PublicServicePage'))
 const GlobalJobAcceptModal = lazy(() => import('@/components/provider/GlobalJobAcceptModal'));
 
 // ── Protected Route wrapper ────────────────────────────────────────────────────
-function ProtectedRoute({ children, allowedRoles, requiredPermission }) {
+function ProtectedRoute({ children, allowedRoles, requiredPermission, allowPendingProvider = false }) {
   const user = useSelector(selectUser);
   const location = useLocation();
+
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to={getRoleHome(user.role)} replace />;
+    return <Navigate to={getRoleHome(user)} replace />;
   }
+
+  // Provider Approval Protection Guard
+  if (user.role === 'provider' && !allowPendingProvider) {
+    if (user.providerStatus && user.providerStatus !== 'approved') {
+      return <Navigate to="/provider/pending" replace />;
+    }
+  }
+
   if (user.role === 'staff' && requiredPermission) {
     const permissions = user.permissions || [];
     if (!permissions.includes(requiredPermission)) {
@@ -64,12 +76,19 @@ function ProtectedRoute({ children, allowedRoles, requiredPermission }) {
       return <Navigate to="/admin" replace />;
     }
   }
+
   return children;
 }
 
-function getRoleHome(role) {
-  if (role === 'admin' || role === 'staff') return '/admin';
-  if (role === 'provider') return '/provider';
+function getRoleHome(user) {
+  if (!user) return '/login';
+  if (user.role === 'admin' || user.role === 'staff') return '/admin';
+  if (user.role === 'provider') {
+    if (user.providerStatus && user.providerStatus !== 'approved') {
+      return '/provider/pending';
+    }
+    return '/provider';
+  }
   return '/';
 }
 
@@ -117,7 +136,7 @@ export default function App() {
         <GlobalJobAcceptModal />
         <Routes>
         {/* Public */}
-        <Route path="/login" element={user ? <Navigate to={getRoleHome(user.role)} replace /> : <LoginPage />} />
+        <Route path="/login" element={user ? <Navigate to={getRoleHome(user)} replace /> : <LoginPage />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/terms-of-service" element={<TermsOfService />} />
@@ -140,16 +159,17 @@ export default function App() {
         <Route path="/profile" element={<ProtectedRoute allowedRoles={['customer']}><ProfilePage /></ProtectedRoute>} />
 
         {/* Shared */}
-        <Route path="/notifications" element={<ProtectedRoute allowedRoles={['customer', 'provider', 'admin', 'staff']}><NotificationsPage /></ProtectedRoute>} />
+        <Route path="/notifications" element={<ProtectedRoute allowedRoles={['customer', 'provider', 'admin', 'staff']} allowPendingProvider={true}><NotificationsPage /></ProtectedRoute>} />
 
         {/* Provider */}
         <Route path="/provider" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderDashboard /></ProviderLockoutGuard></ProtectedRoute>} />
+        <Route path="/provider/pending" element={<ProtectedRoute allowedRoles={['provider']} allowPendingProvider={true}><ProviderPendingPage /></ProtectedRoute>} />
+        <Route path="/provider/onboarding" element={<ProtectedRoute allowedRoles={['provider']} allowPendingProvider={true}><ProviderProfile /></ProtectedRoute>} />
         <Route path="/provider/bookings" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderBookings /></ProviderLockoutGuard></ProtectedRoute>} />
         <Route path="/provider/bookings/:id/materials" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><MaterialsBilling /></ProviderLockoutGuard></ProtectedRoute>} />
         <Route path="/provider/earnings" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderEarnings /></ProviderLockoutGuard></ProtectedRoute>} />
-        <Route path="/provider/profile" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderProfile /></ProviderLockoutGuard></ProtectedRoute>} />
+        <Route path="/provider/profile" element={<ProtectedRoute allowedRoles={['provider']} allowPendingProvider={true}><ProviderLockoutGuard><ProviderProfile /></ProviderLockoutGuard></ProtectedRoute>} />
         <Route path="/provider/complaints" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderComplaints /></ProviderLockoutGuard></ProtectedRoute>} />
-
 
         {/* Admin & Staff Permission Guarded Routes */}
         <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><AdminDashboard /></ProtectedRoute>} />
@@ -165,7 +185,7 @@ export default function App() {
         <Route path="/admin/invoice-settings" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminInvoiceSettings /></ProtectedRoute>} />
         <Route path="/admin/settings/invoice" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminInvoiceSettings /></ProtectedRoute>} />
 
-        <Route path="*" element={<Navigate to={user ? getRoleHome(user.role) : '/login'} replace />} />
+        <Route path="*" element={<Navigate to={getRoleHome(user)} replace />} />
       </Routes>
       </Suspense>
     </ErrorBoundary>
