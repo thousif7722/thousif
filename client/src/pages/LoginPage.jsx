@@ -16,6 +16,7 @@ import {
   selectPendingGoogleUser
 } from '@/store/slices/authSlice';
 import { selectPublicSettings } from '@/store/slices/serviceSlice';
+import { apiService } from '@/services/api';
 import SeoHead from '@/components/seo/SeoHead';
 import toast from 'react-hot-toast';
 
@@ -42,6 +43,7 @@ export default function LoginPage() {
   const [phoneError, setPhoneError] = useState('');
   const [validatedPhone, setValidatedPhone] = useState('');
   const [showRoleStep, setShowRoleStep] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Auto-redirect logged-in users to their respective home pages
   useEffect(() => {
@@ -66,6 +68,7 @@ export default function LoginPage() {
   }, [user, needsPhone, needsRoleSelection, showRoleStep, navigate, location]);
 
   function handleGoogleLogin() {
+    if (isSubmitting || loading) return;
     dispatch(loginWithGoogle());
   }
 
@@ -84,50 +87,79 @@ export default function LoginPage() {
     return normalized;
   }
 
-  function handlePhoneSubmit(e) {
-    e.preventDefault();
+  async function handlePhoneSubmit(e) {
+    if (e) e.preventDefault();
+    if (isSubmitting || loading) return;
+
     setPhoneError('');
     const normalized = validateAndNormalizePhone(phoneInput);
     if (!normalized) {
       setPhoneError('Enter a valid 10-digit Indian mobile number.');
-      toast.error('Enter a valid 10-digit Indian mobile number.');
+      toast.error('Enter a valid 10-digit Indian mobile number.', { id: 'phone-validation-toast' });
       return;
     }
 
-    setValidatedPhone(normalized);
+    setIsSubmitting(true);
+    try {
+      // Pre-check phone availability before moving to Role Selection
+      await apiService.checkPhone(normalized);
+      setValidatedPhone(normalized);
 
-    // If user already exists with an assigned role (e.g. customer/provider), save phone directly
-    if (!isNewUser && existingUserToUpdate?.role) {
-      dispatch(completeRegistration({
-        idToken: pendingGoogleUser?.idToken,
-        phone: normalized,
-        role: existingUserToUpdate.role,
-        name: existingUserToUpdate.name || pendingGoogleUser?.name || '',
-      }));
-    } else {
-      // New user -> proceed to role selection step
-      setShowRoleStep(true);
+      // If user already exists with an assigned role (e.g. customer/provider), save phone directly
+      if (!isNewUser && existingUserToUpdate?.role) {
+        await dispatch(completeRegistration({
+          idToken: pendingGoogleUser?.idToken,
+          phone: normalized,
+          role: existingUserToUpdate.role,
+          name: existingUserToUpdate.name || pendingGoogleUser?.name || '',
+        })).unwrap();
+      } else {
+        // New user -> proceed to role selection step
+        setShowRoleStep(true);
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Mobile number already registered';
+      setPhoneError('This number is already linked to another OneWayFix account.');
+      toast.error('Mobile number already registered', { id: 'phone-duplicate-toast' });
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
-  function handleCompleteRegistration(chosenRole) {
+  async function handleCompleteRegistration(chosenRole) {
+    if (isSubmitting || loading) return;
+
     if (!pendingGoogleUser?.idToken) {
-      toast.error('Your Google session has expired. Please sign in again.');
+      toast.error('Your Google session has expired. Please sign in again.', { id: 'session-expired-toast' });
       dispatch(resetRoleSelection());
       return;
     }
+
     const phoneToUse = validatedPhone || validateAndNormalizePhone(phoneInput);
     if (!phoneToUse) {
-      toast.error('Enter a valid 10-digit Indian mobile number.');
+      toast.error('Enter a valid 10-digit Indian mobile number.', { id: 'phone-validation-toast' });
       setShowRoleStep(false);
       return;
     }
-    dispatch(completeRegistration({
-      idToken: pendingGoogleUser.idToken,
-      phone: phoneToUse,
-      role: chosenRole,
-      name: pendingGoogleUser.name || '',
-    }));
+
+    setIsSubmitting(true);
+    try {
+      await dispatch(completeRegistration({
+        idToken: pendingGoogleUser.idToken,
+        phone: phoneToUse,
+        role: chosenRole,
+        name: pendingGoogleUser.name || '',
+      })).unwrap();
+    } catch (err) {
+      const errMsg = typeof err === 'string' ? err : err?.message || 'Registration failed';
+      if (errMsg.toLowerCase().includes('already registered') || errMsg.toLowerCase().includes('already exists')) {
+        setPhoneError('This number is already linked to another OneWayFix account.');
+        toast.error('Mobile number already registered', { id: 'phone-duplicate-toast' });
+        setShowRoleStep(false);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleBack() {
@@ -276,10 +308,10 @@ export default function LoginPage() {
 
                   <button
                     type="submit"
-                    disabled={loading || !phoneInput.trim()}
+                    disabled={isSubmitting || loading || !phoneInput.trim()}
                     className="w-full py-3.5 px-6 text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60"
                   >
-                    {loading ? (
+                    {(isSubmitting || loading) ? (
                       <span className="animate-spin text-base">↻</span>
                     ) : (
                       <>
@@ -321,8 +353,8 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => handleCompleteRegistration('customer')}
-                    disabled={loading}
-                    className="w-full text-left p-5 rounded-2xl border-2 border-amber-200 bg-amber-50/50 hover:bg-amber-50 hover:border-amber-400 transition-all duration-200 group relative overflow-hidden shadow-sm"
+                    disabled={isSubmitting || loading}
+                    className="w-full text-left p-5 rounded-2xl border-2 border-amber-200 bg-amber-50/50 hover:bg-amber-50 hover:border-amber-400 transition-all duration-200 group relative overflow-hidden shadow-sm disabled:opacity-60"
                   >
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-xl shadow-md group-hover:scale-105 transition-transform">
@@ -346,8 +378,8 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => handleCompleteRegistration('provider')}
-                    disabled={loading}
-                    className="w-full text-left p-5 rounded-2xl border-2 border-blue-200 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group relative overflow-hidden shadow-sm"
+                    disabled={isSubmitting || loading}
+                    className="w-full text-left p-5 rounded-2xl border-2 border-blue-200 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group relative overflow-hidden shadow-sm disabled:opacity-60"
                   >
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl shadow-md group-hover:scale-105 transition-transform">
@@ -368,7 +400,7 @@ export default function LoginPage() {
                   </button>
                 </div>
 
-                {loading && (
+                {(isSubmitting || loading) && (
                   <div className="text-center text-xs text-slate-500 flex items-center justify-center gap-2 py-2">
                     <span className="animate-spin text-base">↻</span> Setting up your account profile...
                   </div>
@@ -387,10 +419,10 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={handleGoogleLogin}
-                  disabled={loading}
+                  disabled={isSubmitting || loading}
                   className="w-full flex items-center justify-center gap-3 py-4 px-6 text-base font-bold text-slate-800 bg-white border-2 border-slate-200 rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-60 mb-6"
                 >
-                  {loading ? (
+                  {(isSubmitting || loading) ? (
                     <span className="animate-spin text-xl text-primary-600">↻</span>
                   ) : (
                     <>

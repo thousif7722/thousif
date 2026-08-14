@@ -148,6 +148,33 @@ async function formatUserResponse(user) {
 // ── Routes ─────────────────────────────────────────────────────────────────────
 
 /**
+ * GET /auth/check-phone
+ * Checks whether a given Indian mobile number is available or already registered.
+ */
+router.get('/check-phone', async (req, res) => {
+  const { phone } = req.query;
+  if (!phone || typeof phone !== 'string') {
+    throw new AppError('Enter a valid 10-digit Indian mobile number.', 400);
+  }
+  const normalizedPhone = normalizeAndValidateIndianPhone(phone);
+  const existingPhoneUser = await User.findOne({ phone: normalizedPhone });
+  if (existingPhoneUser) {
+    return res.status(409).json({
+      success: false,
+      available: false,
+      code: 'PHONE_ALREADY_EXISTS',
+      error: 'This mobile number is already registered with another OneWayFix account.',
+      message: 'This mobile number is already registered with another OneWayFix account.'
+    });
+  }
+  return res.json({
+    success: true,
+    available: true,
+    message: 'Mobile number is available.'
+  });
+});
+
+/**
  * POST /auth/google-authenticate
  * Authenticates Firebase Google OAuth Token.
  * Existing user with phone -> returns user info & tokens immediately.
@@ -247,9 +274,18 @@ router.post('/complete-registration', validateBody(completeRegSchema), async (re
   });
 
   // 3. Check for Duplicate Mobile Number across all registered users
-  const existingPhoneUser = await User.findOne({ phone: normalizedPhone });
-  if (existingPhoneUser && (!user || existingPhoneUser._id.toString() !== user._id.toString())) {
-    throw new AppError('This mobile number is already registered with another OneWayFix account.', 400);
+  const existingPhoneUser = await User.findOne({
+    phone: normalizedPhone,
+    ...(user ? { _id: { $ne: user._id } } : {})
+  });
+
+  if (existingPhoneUser) {
+    return res.status(409).json({
+      success: false,
+      code: 'PHONE_ALREADY_EXISTS',
+      error: 'This mobile number is already registered with another OneWayFix account.',
+      message: 'This mobile number is already registered with another OneWayFix account.'
+    });
   }
 
   let isNewUser = false;

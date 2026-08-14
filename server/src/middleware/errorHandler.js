@@ -17,10 +17,16 @@ function globalErrorHandler(err, req, res, next) {
 
   if (err.code === 11000) {
     // Duplicate key error
-    const field = Object.keys(err.keyValue || {})[0];
+    const keyPattern = err.keyPattern || err.keyValue || {};
+    const field = Object.keys(keyPattern)[0] || 'field';
     statusCode = 409;
-    message = `${field} already exists`;
-    errorCode = 'DUPLICATE_KEY';
+    if (field === 'phone' || (err.errmsg && err.errmsg.includes('phone_1'))) {
+      errorCode = 'PHONE_ALREADY_EXISTS';
+      message = 'This mobile number is already registered with another OneWayFix account.';
+    } else {
+      errorCode = 'DUPLICATE_KEY';
+      message = `${field} already exists`;
+    }
   }
 
   if (err.name === 'ValidationError') {
