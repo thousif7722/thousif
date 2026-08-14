@@ -44,6 +44,7 @@ async function findBestProviders(serviceId, coordinates, excludeProviders = [], 
   const baseFilter = {
     services: serviceId,
     isBlocked: false,
+    jobAccessStatus: { $ne: 'frozen' },
     approvalStatus: 'approved',
     _id: { $nin: excludeProviders },
     'earnings.isOnHold': { $ne: true },
@@ -469,10 +470,10 @@ function calculateCancellationCharge(booking) {
 async function matchPendingBookingsForOnlineProvider(providerId) {
   try {
     const provider = await Provider.findById(providerId)
-      .select('_id name phone rating avatar isOnline isBlocked approvalStatus services currentLocation serviceRadius earnings city')
+      .select('_id name phone rating avatar isOnline isBlocked jobAccessStatus approvalStatus services currentLocation serviceRadius earnings city')
       .lean();
 
-    if (!provider || !provider.isOnline || provider.isBlocked || provider.approvalStatus !== 'approved') {
+    if (!provider || !provider.isOnline || provider.isBlocked || provider.jobAccessStatus === 'frozen' || provider.approvalStatus !== 'approved') {
       return null;
     }
 

@@ -176,6 +176,9 @@ export const apiService = {
   getComplaint: (ticketNumber) => api.get(`/complaints/${ticketNumber}`),
   addComplaintComment: (id, text) => api.post(`/complaints/${id}/comment`, { text }),
   // Provider complaint resolution workflow
+  getFrozenStatus: () => api.get('/complaints/frozen-status'),
+  submitComplaintResolution: (id, data) => api.post(`/complaints/${id}/submit-resolution`, data),
+  respondComplaintMoreInfo: (id, data) => api.post(`/complaints/${id}/respond-more-info`, data),
   scheduleRevisit: (id, data) => api.post(`/complaints/${id}/revisit`, data),
   uploadResolutionProof: (id, formData) => api.post(`/complaints/${id}/proof`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   generateResolutionOtp: (id) => api.post(`/complaints/${id}/resolve/otp`),
@@ -227,6 +230,9 @@ export const apiService = {
   // Admin Complaints
   getAdminComplaints: (params) => api.get('/admin/complaints', { params }),
   reassignComplaint: (id, action) => api.put(`/admin/complaints/${id}/reassign`, { action }),
+  approveUnfreezeComplaint: (id, data) => api.put(`/admin/complaints/${id}/approve-unfreeze`, data),
+  rejectComplaintResolution: (id, data) => api.put(`/admin/complaints/${id}/reject-resolution`, data),
+  requestComplaintMoreInfo: (id, data) => api.put(`/admin/complaints/${id}/request-more-info`, data),
   // Provider Wallet & Commission (Rapido Model)
   getProviderDues: (id) => api.get(`/admin/providers/${id}/dues`),
   adjustProviderWallet: (id, data) => api.put(`/admin/providers/${id}/wallet`, data),

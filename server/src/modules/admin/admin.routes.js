@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const {
   User, Provider, Booking, Transaction,
   Review, Complaint, Service, WalletLedger, SystemSettings, Notification,
-  InvoiceSettings, Invoice
+  InvoiceSettings, Invoice, AuditLog
 } = require('../../models');
 const { authenticate, authorize, requirePermission } = require('../auth/auth.routes');
 const { AppError } = require('../../utils/errors');
@@ -1055,6 +1055,201 @@ router.put('/complaints/:id/reassign', requirePermission('manage_complaints'), a
   res.json({ success: false, message: 'Invalid action' });
 });
 
+/**
+ * PUT /admin/complaints/:id/approve-unfreeze
+ * Admin approves provider resolution, resolves complaint, and restores provider job access
+ */
+router.put('/complaints/:id/approve-unfreeze', requirePermission('manage_complaints'), async (req, res) => {
+  const { note } = req.body;
+
+  const complaint = await Complaint.findById(req.params.id).populate('bookingId');
+  if (!complaint) throw new AppError('Complaint not found', 404);
+
+  const targetProviderId = complaint.againstUser || complaint.bookingId?.providerId;
+
+  // 1. Update Complaint Status
+  complaint.status = 'resolved';
+  complaint.resolution = {
+    action: 'admin_approved',
+    note: note || 'Admin approved provider resolution and restored job access.',
+    resolvedBy: req.userId,
+    resolvedAt: new Date(),
+  };
+  complaint.comments.push({
+    author: req.userId,
+    role: 'admin',
+    text: `Complaint Approved & Resolved: ${note || 'Provider job access restored.'}`,
+  });
+  await complaint.save();
+
+  // 2. Unfreeze Provider Job Access if frozen
+  if (targetProviderId) {
+    const provider = await Provider.findById(targetProviderId);
+    if (provider) {
+      const wasFrozen = provider.jobAccessStatus === 'frozen';
+      provider.jobAccessStatus = 'active';
+      provider.freezeReason = undefined;
+      provider.freezeStartedAt = undefined;
+      provider.freezeComplaintId = undefined;
+      // Guarantee provider account status remains active and unblocked
+      await provider.save();
+
+      // Audit Log
+      await AuditLog.create({
+        action: 'PROVIDER_JOB_FREEZE_REMOVED',
+        providerId: provider._id,
+        complaintId: complaint._id,
+        performedBy: req.userId,
+        previousStatus: wasFrozen ? 'frozen' : 'active',
+        newStatus: 'active',
+        reason: note || 'Admin approved resolution and restored job access',
+      }).catch((err) => logger.error('Failed to create AuditLog:', err.message));
+
+      await AuditLog.create({
+        action: 'COMPLAINT_RESOLVED',
+        providerId: provider._id,
+        complaintId: complaint._id,
+        performedBy: req.userId,
+        previousStatus: complaint.status,
+        newStatus: 'resolved',
+        reason: 'Admin resolution approval',
+      }).catch((err) => logger.error('Failed to create AuditLog:', err.message));
+
+      // Realtime socket & push notification to provider
+      const io = getIO();
+      if (io) {
+        io.to(`provider:${provider._id}`).emit('notification:push', {
+          title: '🎉 Job Access Restored!',
+          body: 'Your complaint has been resolved by OneWayFix Admin and new job access has been restored.',
+          type: 'complaint',
+          isOnHold: false,
+        });
+        io.to(`provider:${provider._id}`).emit('provider:unfrozen', {
+          jobAccessStatus: 'active',
+          message: 'Job access restored',
+        });
+      }
+    }
+  }
+
+  logger.info(`Admin ${req.userId} approved complaint ${complaint._id} and unfroze provider ${targetProviderId}`);
+  res.json({
+    success: true,
+    message: 'Complaint resolved and provider job access restored successfully.',
+    data: complaint,
+  });
+});
+
+/**
+ * PUT /admin/complaints/:id/reject-resolution
+ * Admin rejects provider resolution submission — provider remains job frozen
+ */
+router.put('/complaints/:id/reject-resolution', requirePermission('manage_complaints'), async (req, res) => {
+  const { adminFeedback } = req.body;
+  if (!adminFeedback || typeof adminFeedback !== 'string' || adminFeedback.trim().length < 5) {
+    throw new AppError('Detailed feedback is required when rejecting resolution', 400);
+  }
+
+  const complaint = await Complaint.findById(req.params.id).populate('bookingId');
+  if (!complaint) throw new AppError('Complaint not found', 404);
+
+  const targetProviderId = complaint.againstUser || complaint.bookingId?.providerId;
+
+  complaint.status = 'resolution_rejected';
+  complaint.adminFeedback = adminFeedback.trim();
+  complaint.rejectedAt = new Date();
+  complaint.comments.push({
+    author: req.userId,
+    role: 'admin',
+    text: `Resolution Rejected by Admin: ${adminFeedback.trim()}`,
+  });
+  await complaint.save();
+
+  // Audit Log
+  if (targetProviderId) {
+    await AuditLog.create({
+      action: 'RESOLUTION_REJECTED',
+      providerId: targetProviderId,
+      complaintId: complaint._id,
+      performedBy: req.userId,
+      previousStatus: 'frozen',
+      newStatus: 'frozen',
+      reason: adminFeedback.trim(),
+    }).catch((err) => logger.error('Failed to create AuditLog:', err.message));
+
+    // Notify provider
+    const io = getIO();
+    if (io) {
+      io.to(`provider:${targetProviderId}`).emit('notification:push', {
+        title: '❌ Resolution Submission Rejected',
+        body: `Your submitted resolution for complaint #${complaint.ticketNumber} was not approved. Reason: ${adminFeedback.trim()}`,
+        type: 'complaint',
+      });
+    }
+  }
+
+  res.json({
+    success: true,
+    message: 'Resolution rejected. Provider remains job frozen until acceptable resolution is provided.',
+    data: complaint,
+  });
+});
+
+/**
+ * PUT /admin/complaints/:id/request-more-info
+ * Admin requests additional information / evidence from provider
+ */
+router.put('/complaints/:id/request-more-info', requirePermission('manage_complaints'), async (req, res) => {
+  const { adminMessage } = req.body;
+  if (!adminMessage || typeof adminMessage !== 'string' || adminMessage.trim().length < 5) {
+    throw new AppError('Message detailing required information is required', 400);
+  }
+
+  const complaint = await Complaint.findById(req.params.id).populate('bookingId');
+  if (!complaint) throw new AppError('Complaint not found', 404);
+
+  const targetProviderId = complaint.againstUser || complaint.bookingId?.providerId;
+
+  complaint.status = 'more_information_required';
+  complaint.adminMessage = adminMessage.trim();
+  complaint.infoRequestedAt = new Date();
+  complaint.comments.push({
+    author: req.userId,
+    role: 'admin',
+    text: `Additional Info Requested: ${adminMessage.trim()}`,
+  });
+  await complaint.save();
+
+  // Audit Log
+  if (targetProviderId) {
+    await AuditLog.create({
+      action: 'MORE_INFORMATION_REQUESTED',
+      providerId: targetProviderId,
+      complaintId: complaint._id,
+      performedBy: req.userId,
+      previousStatus: 'frozen',
+      newStatus: 'frozen',
+      reason: adminMessage.trim(),
+    }).catch((err) => logger.error('Failed to create AuditLog:', err.message));
+
+    // Notify provider
+    const io = getIO();
+    if (io) {
+      io.to(`provider:${targetProviderId}`).emit('notification:push', {
+        title: 'ℹ️ Additional Info Required',
+        body: `Admin requested more information regarding complaint #${complaint.ticketNumber}: ${adminMessage.trim()}`,
+        type: 'complaint',
+      });
+    }
+  }
+
+  res.json({
+    success: true,
+    message: 'Request for additional information sent to provider.',
+    data: complaint,
+  });
+});
+
 // ── Fraud Detection ────────────────────────────────────────────────────────────
 router.get('/fraud/alerts', requirePermission('manage_complaints'), async (req, res) => {
   const [
@@ -1978,6 +2173,8 @@ router.post('/announcements', authorize('admin', 'staff'), async (req, res) => {
       createdAt: new Date(),
     },
   });
+});
+
 // ── Invoice & GST Settings APIs ───────────────────────────────────────────────
 
 /**

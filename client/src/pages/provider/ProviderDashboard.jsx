@@ -207,16 +207,22 @@ export default function ProviderDashboard() {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
 
+  const [frozenInfo, setFrozenInfo] = useState(null);
+
   useEffect(() => {
     Promise.all([
       apiService.getMyProfile(),
       apiService.getSchedule(dayjs().format('YYYY-MM-DD')),
       apiService.getEarnings('7d'),
-    ]).then(([profileRes, scheduleRes, earningsRes]) => {
+      apiService.getFrozenStatus().catch(() => ({ data: { data: { isFrozen: false } } })),
+    ]).then(([profileRes, scheduleRes, earningsRes, frozenRes]) => {
       const prof = profileRes.data.data;
       setProfile(prof);
       setTodayJobs(scheduleRes.data.data);
       setEarnings(earningsRes.data.data);
+      if (frozenRes?.data?.data?.isFrozen) {
+        setFrozenInfo(frozenRes.data.data);
+      }
       if (prof?.isOnline) {
         toggleProviderAvailability(true);
         startLocationTracking();
@@ -255,22 +261,71 @@ export default function ProviderDashboard() {
       <Header />
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
 
-        {/* Frozen banner */}
+        {/* Job Access Frozen Banner */}
+        {profile?.jobAccessStatus === 'frozen' && (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 shadow-sm space-y-3 mb-2">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow">
+                <AlertTriangle size={22} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-amber-900 text-base">⚠️ Job Access Temporarily Frozen</h3>
+                  <span className="text-xs bg-amber-200 text-amber-900 font-bold px-2.5 py-0.5 rounded-full">
+                    NEW JOBS PAUSED
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800 mt-1 font-medium leading-relaxed">
+                  Your account is active and you can log in, but new job assignments are temporarily paused because an unresolved complaint has exceeded 7 days.
+                </p>
+              </div>
+            </div>
+
+            {frozenInfo?.complaint && (
+              <div className="bg-white/90 rounded-xl p-3.5 border border-amber-200 text-xs space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-slate-400 font-semibold block">Ticket Number:</span>
+                    <span className="font-bold text-slate-800 font-mono">#{frozenInfo.complaint.ticketNumber}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold block">Days Unresolved:</span>
+                    <span className="font-bold text-red-600">{frozenInfo.complaint.daysUnresolved} Days</span>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Complaint Description:</span>
+                  <p className="text-slate-700 italic bg-slate-50 p-2 rounded-lg border border-slate-100 mt-0.5">
+                    "{frozenInfo.complaint.description}"
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs text-amber-700 font-semibold">
+                Existing accepted jobs & profile access remain active.
+              </span>
+              <Link
+                to="/provider/complaints"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow flex items-center gap-1.5"
+              >
+                View & Resolve Issue →
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Account Blocked Banner */}
         {profile?.isBlocked && (
           <div className="bg-red-600 border border-red-700 rounded-2xl p-4 flex gap-3 items-start shadow-red-200 shadow-lg text-white mb-1">
             <AlertTriangle size={22} className="shrink-0 mt-0.5 opacity-90" />
             <div className="flex-1">
-              <p className="font-bold text-lg">Account Frozen</p>
+              <p className="font-bold text-lg">Account Blocked</p>
               <p className="text-sm mt-0.5 opacity-90 leading-snug">
-                {profile.blockReason || 'Your account has been frozen.'}
-              </p>
-              <p className="text-xs font-bold mt-2 bg-red-700/50 inline-block px-2.5 py-1 rounded-lg">
-                Resolve to unfreeze → You cannot receive new jobs.
+                {profile.blockReason || 'Your account has been blocked.'}
               </p>
             </div>
-            <Link to="/provider/complaints" className="bg-white text-red-700 hover:bg-slate-50 font-bold text-xs px-4 py-2.5 rounded-xl transition-all self-center whitespace-nowrap shadow-sm">
-              Solve Now
-            </Link>
           </div>
         )}
 

@@ -2,9 +2,9 @@
 const express = require('express');
 const Joi = require('joi');
 const crypto = require('crypto');
-const { Complaint, Booking, Notification, Provider } = require('../../models');
+const { Complaint, Booking, Notification, Provider, AuditLog } = require('../../models');
 
-const { authenticate } = require('../auth/auth.routes');
+const { authenticate, authorize } = require('../auth/auth.routes');
 const { validateBody } = require('../../middleware/validate');
 const { AppError } = require('../../utils/errors');
 const { getLeastBusyStaff } = require('../../utils/assignment');
@@ -434,12 +434,171 @@ async function autoEscalateStaleComplaints() {
   return staleComplaints.length;
 }
 
+// ── GET /complaints/frozen-status — Provider checks Job Access Freeze status ───
+router.get('/frozen-status', authenticate, authorize('provider'), async (req, res) => {
+  const provider = await Provider.findById(req.userId).lean();
+  if (!provider) throw new AppError('Provider profile not found', 404);
+
+  if (provider.jobAccessStatus !== 'frozen') {
+    return res.json({ success: true, data: { isFrozen: false } });
+  }
+
+  // Find complaint causing freeze
+  let complaint = null;
+  if (provider.freezeComplaintId) {
+    complaint = await Complaint.findById(provider.freezeComplaintId)
+      .populate({
+        path: 'bookingId',
+        select: 'bookingNumber scheduledDate totalAmount status serviceAddress serviceId',
+        populate: { path: 'serviceId', select: 'name category' }
+      })
+      .populate('raisedBy', 'name phone')
+      .lean();
+  }
+
+  if (!complaint) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    complaint = await Complaint.findOne({
+      againstUser: req.userId,
+      status: { $in: ['open', 'in_review', 'resolution_submitted', 'more_information_required', 'resolution_rejected', 'escalated'] },
+      createdAt: { $lte: sevenDaysAgo },
+    })
+      .populate({
+        path: 'bookingId',
+        select: 'bookingNumber scheduledDate totalAmount status serviceAddress serviceId',
+        populate: { path: 'serviceId', select: 'name category' }
+      })
+      .populate('raisedBy', 'name phone')
+      .sort({ createdAt: 1 })
+      .lean();
+  }
+
+  const daysUnresolved = complaint
+    ? Math.max(7, Math.floor((Date.now() - new Date(complaint.createdAt).getTime()) / (1000 * 60 * 60 * 24)))
+    : 7;
+
+  res.json({
+    success: true,
+    data: {
+      isFrozen: true,
+      freezeReason: provider.freezeReason || 'Unresolved complaint exceeded 7 days',
+      freezeStartedAt: provider.freezeStartedAt,
+      complaint: complaint ? {
+        _id: complaint._id,
+        ticketNumber: complaint.ticketNumber,
+        category: complaint.category,
+        description: complaint.description,
+        status: complaint.status,
+        createdAt: complaint.createdAt,
+        daysUnresolved,
+        resolutionResponse: complaint.resolutionResponse,
+        resolutionEvidence: complaint.resolutionEvidence,
+        adminFeedback: complaint.adminFeedback,
+        adminMessage: complaint.adminMessage,
+        raisedBy: complaint.raisedBy,
+        booking: complaint.bookingId,
+      } : null,
+    },
+  });
+});
+
+// ── POST /complaints/:id/submit-resolution — Provider submits resolution ──────
+router.post('/:id/submit-resolution', authenticate, authorize('provider'), async (req, res) => {
+  const { resolutionResponse, resolutionEvidence } = req.body;
+  if (!resolutionResponse || typeof resolutionResponse !== 'string' || resolutionResponse.trim().length < 10) {
+    throw new AppError('Detailed explanation (at least 10 characters) is required', 400);
+  }
+
+  const complaint = await Complaint.findById(req.params.id);
+  if (!complaint) throw new AppError('Complaint not found', 404);
+
+  const booking = await Booking.findById(complaint.bookingId);
+  const isTargetProvider = complaint.againstUser?.toString() === req.userId || booking?.providerId?.toString() === req.userId;
+  if (!isTargetProvider) throw new AppError('Not authorized to resolve this complaint', 403);
+
+  complaint.status = 'resolution_submitted';
+  complaint.resolutionResponse = resolutionResponse.trim();
+  complaint.resolutionEvidence = Array.isArray(resolutionEvidence) ? resolutionEvidence : [];
+  complaint.resolutionSubmittedAt = new Date();
+  complaint.comments.push({
+    author: req.userId,
+    role: 'provider',
+    text: `Resolution Submitted: ${resolutionResponse.trim()}`,
+  });
+  await complaint.save();
+
+  // Audit Log
+  await AuditLog.create({
+    action: 'RESOLUTION_SUBMITTED',
+    providerId: req.userId,
+    complaintId: complaint._id,
+    performedBy: req.userId,
+    previousStatus: 'frozen',
+    newStatus: 'frozen',
+    reason: 'Provider submitted complaint resolution for admin review',
+    details: { response: resolutionResponse.trim(), evidenceCount: complaint.resolutionEvidence.length },
+  }).catch((err) => logger.error('AuditLog creation error:', err.message));
+
+  // Emit socket to admin
+  const { getIO } = require('../../socket');
+  const io = getIO();
+  if (io) {
+    io.to('admin').emit('admin:resolution_submitted', {
+      complaintId: complaint._id,
+      ticketNumber: complaint.ticketNumber,
+      providerId: req.userId,
+    });
+  }
+
+  res.json({
+    success: true,
+    message: 'Resolution submitted successfully. OneWayFix Admin will review your submission.',
+    data: {
+      status: complaint.status,
+      resolutionSubmittedAt: complaint.resolutionSubmittedAt,
+    },
+  });
+});
+
+// ── POST /complaints/:id/respond-more-info — Provider responds to info request ─
+router.post('/:id/respond-more-info', authenticate, authorize('provider'), async (req, res) => {
+  const { resolutionResponse, resolutionEvidence } = req.body;
+  if (!resolutionResponse || typeof resolutionResponse !== 'string' || resolutionResponse.trim().length < 5) {
+    throw new AppError('Please provide the requested information', 400);
+  }
+
+  const complaint = await Complaint.findById(req.params.id);
+  if (!complaint) throw new AppError('Complaint not found', 404);
+
+  const booking = await Booking.findById(complaint.bookingId);
+  const isTargetProvider = complaint.againstUser?.toString() === req.userId || booking?.providerId?.toString() === req.userId;
+  if (!isTargetProvider) throw new AppError('Not authorized', 403);
+
+  complaint.status = 'resolution_submitted';
+  complaint.resolutionResponse = resolutionResponse.trim();
+  if (Array.isArray(resolutionEvidence) && resolutionEvidence.length > 0) {
+    complaint.resolutionEvidence = [...(complaint.resolutionEvidence || []), ...resolutionEvidence];
+  }
+  complaint.comments.push({
+    author: req.userId,
+    role: 'provider',
+    text: `Updated Info Submitted: ${resolutionResponse.trim()}`,
+  });
+  await complaint.save();
+
+  res.json({
+    success: true,
+    message: 'Updated information submitted for admin review.',
+    data: { status: complaint.status },
+  });
+});
+
 // ── Automated Scanner: freeze providers after 7 days unresolved ────────────────
 async function autoFreezeProviders() {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const staleComplaints = await Complaint.find({
-    status: { $in: ['open', 'in_review', 'escalated'] },
+    status: { $in: ['open', 'in_review', 'escalated', 'resolution_rejected', 'more_information_required'] },
     createdAt: { $lte: sevenDaysAgo },
   }).populate('bookingId', 'providerId');
 
@@ -449,18 +608,31 @@ async function autoFreezeProviders() {
     if (!providerId) continue;
 
     const provider = await Provider.findById(providerId);
-    if (provider && !provider.isBlocked) {
-      provider.isBlocked = true;
-      provider.blockReason = 'Frozen due to unresolved complaint over 7 days. Solve the complaint to unfreeze.';
+    if (provider && provider.jobAccessStatus !== 'frozen') {
+      provider.jobAccessStatus = 'frozen';
+      provider.freezeReason = 'Unresolved complaint exceeded 7 days';
+      provider.freezeStartedAt = new Date();
+      provider.freezeComplaintId = complaint._id;
+      // Do NOT set provider.isBlocked = true or alter user account status
       await provider.save();
       frozenCount++;
 
+      // Create Audit Log
+      await AuditLog.create({
+        action: 'COMPLAINT_7_DAY_FREEZE',
+        providerId: provider._id,
+        complaintId: complaint._id,
+        previousStatus: 'active',
+        newStatus: 'frozen',
+        reason: 'Unresolved complaint exceeded 7 days',
+      }).catch(err => logger.error('Failed to create AuditLog:', err.message));
+
       emitToProvider(provider._id.toString(), 'notification:push', {
-        title: '❄️ Account Frozen',
-        body: `Your account has been frozen because complaint #${complaint.ticketNumber} has been unresolved for 7 days. Please solve it immediately to unfreeze.`,
+        title: '⚠️ New Jobs Temporarily Paused',
+        body: `New job assignments have been temporarily paused because complaint #${complaint.ticketNumber} has been unresolved for 7 days. Please submit a resolution to restore job access.`,
         type: 'complaint',
       });
-      logger.warn(`[ComplaintFreeze] Provider ${provider._id} frozen due to complaint ${complaint._id}`);
+      logger.warn(`[ComplaintFreeze] Provider ${provider._id} job access frozen due to complaint ${complaint._id}`);
     }
   }
   return frozenCount;

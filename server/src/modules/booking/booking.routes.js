@@ -374,8 +374,16 @@ router.put('/:id/accept', authenticate, authorize('provider'), async (req, res) 
     throw new AppError(`Cannot accept booking with status: ${booking.status}`, 400);
   }
 
-  // 🛡️ Provider Debt Lockout Check
+  // 🛡️ Provider Debt & Job Freeze Lockout Check
   const provider = await Provider.findById(req.userId);
+  if (provider?.jobAccessStatus === 'frozen') {
+    return res.status(403).json({
+      success: false,
+      code: 'PROVIDER_JOB_ACCESS_FROZEN',
+      error: 'New job access is temporarily frozen due to an unresolved complaint. Please submit a resolution to restore job access.',
+      message: 'New job access is temporarily frozen due to an unresolved complaint. Please submit a resolution to restore job access.',
+    });
+  }
   if (provider?.earnings?.isOnHold || (provider?.earnings?.pendingCommission >= 500) || (provider?.earnings?.walletBalance <= -500)) {
     throw new AppError('Account suspended due to outstanding debt limit. Please clear your dues to unlock job dispatch.', 400);
   }

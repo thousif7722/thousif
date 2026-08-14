@@ -320,18 +320,138 @@ function RevisitModal({ complaint, onClose, onScheduled }) {
   );
 }
 
+// ── Submit Resolution Modal ──────────────────────────────────────────────────
+function SubmitResolutionModal({ complaint, onClose, onSubmitted }) {
+  const [response, setResponse] = useState(complaint.resolutionResponse || '');
+  const [previews, setPreviews] = useState(complaint.resolutionEvidence ? complaint.resolutionEvidence.map(url => ({ url })) : []);
+  const [submitting, setSubmitting] = useState(false);
+  const fileRef = useRef();
+
+  function handleFiles(files) {
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviews(prev => [...prev, { url: reader.result }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleSubmit() {
+    if (!response.trim() || response.trim().length < 10) {
+      toast.error('Please provide a detailed explanation (at least 10 characters)');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      if (complaint.status === 'more_information_required') {
+        await apiService.respondComplaintMoreInfo(complaint._id, {
+          resolutionResponse: response,
+          resolutionEvidence: previews.map(p => p.url),
+        });
+      } else {
+        await apiService.submitComplaintResolution(complaint._id, {
+          resolutionResponse: response,
+          resolutionEvidence: previews.map(p => p.url),
+        });
+      }
+      toast.success('Resolution submitted for Admin Review!');
+      onSubmitted();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Submission failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl px-5 pt-5 pb-10 max-w-lg mx-auto overflow-y-auto max-h-[90vh]"
+        style={{ animation: 'slideUp 0.25s ease-out' }}>
+        <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-5" />
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+            <Shield size={20} className="text-amber-600" />
+          </div>
+          <div>
+            <h2 className="font-bold text-slate-900">Submit Complaint Resolution</h2>
+            <p className="text-xs text-slate-500">Ticket #{complaint.ticketNumber}</p>
+          </div>
+          <button onClick={onClose} className="ml-auto p-2 rounded-full hover:bg-slate-100 text-slate-400"><X size={18} /></button>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-800">
+          Submitting a resolution notifies OneWayFix Admins to review your response and evidence. Once approved, your new job access will be immediately restored.
+        </div>
+
+        <label className="block text-xs font-bold text-slate-700 mb-1">
+          Detailed Explanation of Actions Taken <span className="text-red-500">*</span>
+        </label>
+        <textarea
+          value={response}
+          onChange={e => setResponse(e.target.value)}
+          rows={4}
+          placeholder="Explain what steps were taken to resolve this complaint (e.g. visited customer location, refunded difference, replaced faulty component)..."
+          className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none bg-slate-50 mb-4"
+        />
+
+        <label className="block text-xs font-bold text-slate-700 mb-1">Evidence / Photos (Optional)</label>
+        <div
+          onClick={() => fileRef.current?.click()}
+          className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50/50 transition-all mb-4"
+        >
+          <Upload size={22} className="mx-auto mb-1 text-slate-400" />
+          <p className="text-xs font-medium text-slate-600">Tap to upload photos / receipts</p>
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
+        </div>
+
+        {previews.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
+            {previews.map((p, i) => (
+              <div key={i} className="relative shrink-0">
+                <img src={p.url} alt="Evidence" className="w-16 h-16 rounded-lg object-cover border border-slate-200" />
+                <button
+                  onClick={() => setPreviews(pr => pr.filter((_, idx) => idx !== i))}
+                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center"
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={handleSubmit}
+          disabled={submitting || response.trim().length < 10}
+          className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+            submitting || response.trim().length < 10
+              ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              : 'bg-amber-600 hover:bg-amber-700 text-white shadow-lg shadow-amber-200'
+          }`}
+        >
+          {submitting ? 'Submitting…' : <><CheckCircle2 size={16} /> Submit Resolution for Admin Review</>}
+        </button>
+      </div>
+    </>
+  );
+}
+
 // ── Complaint Card ──────────────────────────────────────────────────────────────
 function ComplaintCard({ complaint, onRefresh }) {
   const [expanded, setExpanded] = useState(false);
-  const [modal, setModal] = useState(null); // 'revisit' | 'proof' | 'otp'
+  const [modal, setModal] = useState(null); // 'revisit' | 'proof' | 'otp' | 'submit_resolution'
 
   const booking = complaint.bookingId;
   const customer = complaint.raisedBy;
-  const isOpen = ['open', 'in_review'].includes(complaint.status);
+  const isOpen = ['open', 'in_review', 'more_information_required', 'resolution_rejected'].includes(complaint.status);
 
   const STATUS_COLORS = {
     open: 'bg-red-100 text-red-700',
     in_review: 'bg-amber-100 text-amber-700',
+    resolution_submitted: 'bg-blue-100 text-blue-700',
+    more_information_required: 'bg-amber-100 text-amber-800',
+    resolution_rejected: 'bg-red-100 text-red-800',
     resolved: 'bg-green-100 text-green-700',
     closed: 'bg-slate-100 text-slate-500',
   };
@@ -348,26 +468,34 @@ function ComplaintCard({ complaint, onRefresh }) {
   };
 
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${isOpen ? 'border-red-200' : 'border-slate-100'}`}>
+    <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${isOpen ? 'border-amber-200' : 'border-slate-100'}`}>
       {/* Status banner for open */}
       {isOpen && (
-        <div className="bg-red-500 px-4 py-1.5 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-          <span className="text-white text-xs font-bold tracking-wide">ACTION REQUIRED — COMPLAINT</span>
+        <div className="bg-amber-500 px-4 py-1.5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span className="text-white text-xs font-bold tracking-wide">COMPLAINT RESOLUTION REQUIRED</span>
+          </div>
+          <button
+            onClick={() => setModal('submit_resolution')}
+            className="bg-white text-amber-800 hover:bg-amber-50 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full shadow-sm"
+          >
+            Submit Resolution →
+          </button>
         </div>
       )}
 
       <div className="p-4">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-xl shrink-0">⚠️</div>
+            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-xl shrink-0">⚠️</div>
             <div>
               <p className="font-bold text-slate-900 text-sm">#{complaint.ticketNumber}</p>
               <p className="text-xs text-slate-500">{CATEGORY_LABELS[complaint.category] || complaint.category}</p>
             </div>
           </div>
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[complaint.status] || 'bg-slate-100 text-slate-500'}`}>
-            {complaint.status.replace('_', ' ').toUpperCase()}
+            {complaint.status.replace(/_/g, ' ').toUpperCase()}
           </span>
         </div>
 
@@ -391,9 +519,68 @@ function ComplaintCard({ complaint, onRefresh }) {
           {customer?.phone && <span className="ml-1 text-slate-400">· {customer.phone}</span>}
         </p>
 
+        {/* Workflow state banners */}
+        {complaint.status === 'resolution_submitted' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 space-y-1 text-xs text-blue-900 mb-3">
+            <div className="flex items-center gap-2 font-bold text-blue-800 text-sm">
+              <Clock size={16} className="text-blue-600 animate-pulse" />
+              Resolution Submitted — Under Admin Review
+            </div>
+            <p className="text-blue-700">
+              Your resolution explanation and evidence have been submitted. You can continue logging into your account, but new job access remains frozen until reviewed by OneWayFix Admin.
+            </p>
+          </div>
+        )}
+
+        {complaint.status === 'more_information_required' && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 space-y-2 text-xs text-amber-900 mb-3">
+            <div className="flex items-center gap-2 font-bold text-amber-800 text-sm">
+              <AlertTriangle size={16} className="text-amber-600" />
+              More Information Requested by Admin
+            </div>
+            {complaint.adminMessage && (
+              <p className="bg-white/80 p-2.5 rounded-lg border border-amber-200 text-amber-900 font-medium italic">
+                "{complaint.adminMessage}"
+              </p>
+            )}
+            <button
+              onClick={() => setModal('submit_resolution')}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded-lg transition-all"
+            >
+              Submit Additional Information & Proof →
+            </button>
+          </div>
+        )}
+
+        {complaint.status === 'resolution_rejected' && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 space-y-2 text-xs text-red-900 mb-3">
+            <div className="flex items-center gap-2 font-bold text-red-800 text-sm">
+              <X size={16} className="text-red-600" />
+              Resolution Submission Rejected by Admin
+            </div>
+            {complaint.adminFeedback && (
+              <p className="bg-white/80 p-2.5 rounded-lg border border-red-200 text-red-900 font-medium italic">
+                "{complaint.adminFeedback}"
+              </p>
+            )}
+            <button
+              onClick={() => setModal('submit_resolution')}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-lg transition-all"
+            >
+              Re-submit Resolution Explanation & Proof →
+            </button>
+          </div>
+        )}
+
         {/* Action buttons for open complaints */}
         {isOpen && (
           <div className="space-y-2">
+            <button
+              onClick={() => setModal('submit_resolution')}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-3 rounded-xl shadow transition-all flex items-center justify-center gap-2"
+            >
+              <Shield size={16} /> Submit Resolution to Admin for Unfreeze
+            </button>
             <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => setModal('revisit')}
@@ -416,10 +603,6 @@ function ComplaintCard({ complaint, onRefresh }) {
                 <CheckCircle2 size={16} />
                 Mark Resolved
               </button>
-            </div>
-
-            <div className="text-center text-xs text-slate-400 pt-1">
-              Step 1: Schedule Revisit → Step 2: Upload Proof → Step 3: Get OTP from Customer
             </div>
           </div>
         )}
@@ -458,6 +641,9 @@ function ComplaintCard({ complaint, onRefresh }) {
       </div>
 
       {/* Modals */}
+      {modal === 'submit_resolution' && (
+        <SubmitResolutionModal complaint={complaint} onClose={() => setModal(null)} onSubmitted={onRefresh} />
+      )}
       {modal === 'revisit' && (
         <RevisitModal complaint={complaint} onClose={() => setModal(null)} onScheduled={onRefresh} />
       )}

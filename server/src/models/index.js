@@ -149,6 +149,12 @@ const ProviderSchema = new mongoose.Schema({
   isBlocked: { type: Boolean, default: false },
   blockReason: String,
 
+  // Job Access Freeze (7-day unresolved complaint rule)
+  jobAccessStatus: { type: String, enum: ['active', 'frozen'], default: 'active', index: true },
+  freezeReason: String,
+  freezeStartedAt: Date,
+  freezeComplaintId: { type: mongoose.Schema.Types.ObjectId, ref: 'Complaint' },
+
   // KYC
   kyc: KYCSchema,
 
@@ -625,10 +631,28 @@ const ComplaintSchema = new mongoose.Schema({
   severity: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
   status: {
     type: String,
-    enum: ['open', 'in_review', 'resolved', 'escalated', 'closed'],
+    enum: [
+      'open',
+      'in_review',
+      'resolution_submitted',
+      'more_information_required',
+      'resolution_rejected',
+      'resolved',
+      'escalated',
+      'closed',
+    ],
     default: 'open',
     index: true,
   },
+
+  // Resolution workflow fields
+  resolutionResponse: String,
+  resolutionEvidence: [String],
+  resolutionSubmittedAt: Date,
+  adminFeedback: String,
+  adminMessage: String,
+  infoRequestedAt: Date,
+  rejectedAt: Date,
 
   resolution: {
     action: String,
@@ -1051,6 +1075,23 @@ const InvoiceSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// AUDIT LOG MODEL
+// ══════════════════════════════════════════════════════════════════════════════
+const AuditLogSchema = new mongoose.Schema({
+  action: { type: String, required: true, index: true },
+  providerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Provider', index: true },
+  complaintId: { type: mongoose.Schema.Types.ObjectId, ref: 'Complaint', index: true },
+  performedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  previousStatus: String,
+  newStatus: String,
+  reason: String,
+  details: mongoose.Schema.Types.Mixed,
+}, { timestamps: true });
+
+AuditLogSchema.index({ providerId: 1, createdAt: -1 });
+AuditLogSchema.index({ complaintId: 1, createdAt: -1 });
+
+// ══════════════════════════════════════════════════════════════════════════════
 // EXPORTS
 // ══════════════════════════════════════════════════════════════════════════════
 module.exports = {
@@ -1070,4 +1111,5 @@ module.exports = {
   SystemSettings: mongoose.model('SystemSettings', SystemSettingsSchema),
   InvoiceSettings: mongoose.model('InvoiceSettings', InvoiceSettingsSchema),
   Invoice: mongoose.model('Invoice', InvoiceSchema),
+  AuditLog: mongoose.model('AuditLog', AuditLogSchema),
 };

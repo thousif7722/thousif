@@ -328,6 +328,126 @@ function ComplaintDetailsModal({ complaint, onClose, onReassign }) {
             </div>
           )}
 
+          {/* Provider Resolution Submission Review Section */}
+          {['resolution_submitted', 'more_information_required', 'resolution_rejected'].includes(complaint.status) && (
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-purple-950 text-sm flex items-center gap-2">
+                  <ShieldAlert size={16} className="text-purple-600" />
+                  Provider Resolution Submission
+                </h4>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-200 text-purple-900">
+                  {complaint.status.replace(/_/g, ' ').toUpperCase()}
+                </span>
+              </div>
+
+              {complaint.resolutionResponse && (
+                <div>
+                  <span className="text-xs text-purple-700 font-bold block mb-1">Provider's Explanation:</span>
+                  <p className="text-slate-800 text-xs bg-white p-3 rounded-xl border border-purple-100 font-medium">
+                    "{complaint.resolutionResponse}"
+                  </p>
+                </div>
+              )}
+
+              {complaint.resolutionEvidence?.length > 0 && (
+                <div>
+                  <span className="text-xs text-purple-700 font-bold block mb-1">Evidence / Photos Provided:</span>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {complaint.resolutionEvidence.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noreferrer">
+                        <img src={url} alt={`Evidence ${i + 1}`} className="w-16 h-16 rounded-lg object-cover border border-purple-200 shadow-sm hover:scale-105 transition-transform" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {complaint.adminMessage && (
+                <div className="bg-amber-100/80 p-2.5 rounded-xl text-xs text-amber-900 font-medium">
+                  <strong>Previous Admin Request:</strong> "{complaint.adminMessage}"
+                </div>
+              )}
+
+              {complaint.adminFeedback && (
+                <div className="bg-red-100/80 p-2.5 rounded-xl text-xs text-red-900 font-medium">
+                  <strong>Previous Rejection Feedback:</strong> "{complaint.adminFeedback}"
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Admin Review Action Forms */}
+          {complaint.status !== 'resolved' && (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+              <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Admin Decision & Action Panel</h4>
+              
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  id="adminActionNote"
+                  placeholder="Optional admin note / instructions..."
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white"
+                />
+                
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button
+                    onClick={async () => {
+                      const note = document.getElementById('adminActionNote')?.value || '';
+                      try {
+                        await apiService.approveUnfreezeComplaint(complaint._id, { note });
+                        toast.success('Resolution Approved & Job Access Restored!');
+                        onClose();
+                        window.location.reload();
+                      } catch (err) {
+                        toast.error(err.response?.data?.error || 'Approval failed');
+                      }
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle size={14} /> Approve & Unfreeze
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      const note = document.getElementById('adminActionNote')?.value || '';
+                      if (!note.trim()) { toast.error('Please enter a message specifying required info'); return; }
+                      try {
+                        await apiService.requestComplaintMoreInfo(complaint._id, { adminMessage: note });
+                        toast.success('Request sent to provider');
+                        onClose();
+                        window.location.reload();
+                      } catch (err) {
+                        toast.error(err.response?.data?.error || 'Request failed');
+                      }
+                    }}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs py-2.5 rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Clock size={14} /> Request Info
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      const note = document.getElementById('adminActionNote')?.value || '';
+                      if (!note.trim()) { toast.error('Please enter feedback explaining rejection'); return; }
+                      try {
+                        await apiService.rejectComplaintResolution(complaint._id, { adminFeedback: note });
+                        toast.success('Resolution submission rejected');
+                        onClose();
+                        window.location.reload();
+                      } catch (err) {
+                        toast.error(err.response?.data?.error || 'Rejection failed');
+                      }
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-2.5 rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <X size={14} /> Reject Resolution
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
 
         {/* Modal Footer Actions */}
