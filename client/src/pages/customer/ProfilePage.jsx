@@ -65,10 +65,12 @@ export default function ProfilePage() {
                 </button>
               </div>
             )}
-            <div className="flex items-center gap-1.5 mt-1 text-slate-500 text-sm">
-              <Phone size={13} />
-              <span>+91 {user?.phone}</span>
-            </div>
+            {user?.phone && (
+              <div className="flex items-center gap-1.5 mt-1 text-slate-500 text-sm">
+                <Phone size={13} />
+                <span>+91 {user.phone}</span>
+              </div>
+            )}
             {user?.email && (
               <div className="flex items-center gap-1.5 mt-0.5 text-slate-500 text-sm">
                 <Mail size={13} />

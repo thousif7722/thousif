@@ -1,14 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, ArrowRight, RefreshCw, ChevronLeft, UserCheck, Briefcase, Check, ShieldCheck, Star } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ShieldCheck, Star } from 'lucide-react';
 import {
   loginWithGoogle,
   completeRegistration,
-  sendOTP,
-  verifyOTP,
-  resetOtp,
   resetRoleSelection,
   selectAuthLoading,
   selectUser,
@@ -28,7 +25,6 @@ export default function LoginPage() {
 
   const loading = useSelector(selectAuthLoading);
   const user = useSelector(selectUser);
-  const { otpSent, otpPhone } = useSelector(s => s.auth);
   const needsRoleSelection = useSelector(selectNeedsRoleSelection);
   const pendingGoogleUser = useSelector(selectPendingGoogleUser);
   const settings = useSelector(selectPublicSettings);
@@ -36,18 +32,7 @@ export default function LoginPage() {
   const siteName = settings?.siteName || 'OneWayFix';
   const logoUrl = settings?.logoUrl;
 
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [phoneRole, setPhoneRole] = useState('customer');
-  const [name, setName] = useState('');
-  const [showPhoneAuth, setShowPhoneAuth] = useState(false);
-  const [selectedRole, setSelectedRole] = useState(null);
-  const [resendTimer, setResendTimer] = useState(0);
-
-  const otpRefs = useRef([]);
-  const timerRef = useRef(null);
-
-  // Auto-redirect logged-in users to their respective homes
+  // Auto-redirect logged-in users to their respective home pages
   useEffect(() => {
     if (user && !needsRoleSelection) {
       const from = location.state?.from?.pathname;
@@ -69,18 +54,6 @@ export default function LoginPage() {
     }
   }, [user, needsRoleSelection, navigate, location]);
 
-  useEffect(() => {
-    if (otpSent) startResendTimer();
-    return () => clearInterval(timerRef.current);
-  }, [otpSent]);
-
-  function startResendTimer() {
-    setResendTimer(30);
-    timerRef.current = setInterval(() => {
-      setResendTimer(t => { if (t <= 1) { clearInterval(timerRef.current); return 0; } return t - 1; });
-    }, 1000);
-  }
-
   function handleGoogleLogin() {
     dispatch(loginWithGoogle());
   }
@@ -98,65 +71,17 @@ export default function LoginPage() {
     }));
   }
 
-  function handlePhoneChange(e) {
-    const val = e.target.value.replace(/\D/g, '').slice(0, 10);
-    setPhone(val);
-  }
-
-  function handleSendOTP(e) {
-    e.preventDefault();
-    if (phone.length !== 10) return toast.error('Enter a valid 10-digit mobile number');
-    dispatch(sendOTP({ phone, role: phoneRole }));
-  }
-
-  function handleOTPChange(index, value) {
-    if (!/^\d*$/.test(value)) return;
-    const newOtp = [...otp];
-    newOtp[index] = value.slice(-1);
-    setOtp(newOtp);
-    if (value && index < 5) otpRefs.current[index + 1]?.focus();
-    if (newOtp.every(d => d) && newOtp.join('').length === 6) {
-      handleVerify(newOtp.join(''));
-    }
-  }
-
-  function handleOTPKeyDown(index, e) {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      otpRefs.current[index - 1]?.focus();
-    }
-  }
-
-  function handleVerify(code) {
-    const otpCode = code || otp.join('');
-    if (otpCode.length !== 6) return toast.error('Enter the complete 6-digit OTP');
-    const payload = { phone: otpPhone, otp: otpCode, role: phoneRole };
-    if (name.trim()) payload.name = name.trim();
-    dispatch(verifyOTP(payload));
-  }
-
-  function handleResend() {
-    if (resendTimer > 0) return;
-    dispatch(sendOTP({ phone: otpPhone, role: phoneRole }));
-  }
-
   function handleBack() {
     if (needsRoleSelection) {
       dispatch(resetRoleSelection());
-      return;
     }
-    if (otpSent) {
-      dispatch(resetOtp());
-      setOtp(['', '', '', '', '', '']);
-      return;
-    }
-    setShowPhoneAuth(false);
   }
 
   return (
     <div className="min-h-screen flex bg-slate-50">
       <SeoHead title={`Login | ${siteName}`} noIndex={true} />
 
-      {/* Left panel — Branding */}
+      {/* Left Panel — Branding */}
       <div className="hidden lg:flex flex-col justify-between w-1/2 p-16 bg-gradient-to-br from-slate-900 via-primary-950 to-blue-900 text-white relative overflow-hidden">
         {/* Background Subtle Pattern */}
         <div className="absolute inset-0 bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:24px_24px] opacity-15 pointer-events-none" />
@@ -209,7 +134,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right panel — Authentication UI */}
+      {/* Right Panel — Authentication UI */}
       <div className="flex-1 flex items-center justify-center p-4 sm:p-8 bg-white">
         <motion.div
           className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8"
@@ -230,10 +155,8 @@ export default function LoginPage() {
             <p className="text-slate-500 text-xs font-medium mt-1">Your Service, Our Priority</p>
           </div>
 
-          <div id="firebase-recaptcha" />
-
           <AnimatePresence mode="wait">
-            {/* ── STEP A: NEW USER ROLE SELECTION SCREEN ──────────────────────────────── */}
+            {/* ── STEP 1: NEW USER ROLE SELECTION SCREEN ──────────────────────────────── */}
             {needsRoleSelection ? (
               <motion.div key="role-selection" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <button
@@ -245,11 +168,11 @@ export default function LoginPage() {
 
                 <div className="text-center mb-8">
                   <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-3 py-1 rounded-full inline-block mb-2">
-                    Google Auth Success
+                    Google Sign-In Successful
                   </span>
                   <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">How will you use {siteName}?</h2>
                   <p className="text-slate-500 text-sm mt-1">
-                    Select your primary profile type to complete setup for <span className="font-semibold text-slate-700">{pendingGoogleUser?.email}</span>
+                    Select your account type to complete setup for <span className="font-semibold text-slate-700">{pendingGoogleUser?.email}</span>
                   </p>
                 </div>
 
@@ -312,12 +235,12 @@ export default function LoginPage() {
                 )}
               </motion.div>
 
-            /* ── STEP B: NORMAL LOGIN SCREEN (Google Primary) ───────────────────────── */
-            ) : !showPhoneAuth && !otpSent ? (
+            /* ── STEP 2: GOOGLE SIGN-IN PRIMARY SCREEN ──────────────────────────────── */
+            ) : (
               <motion.div key="main-login" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <div className="text-center mb-8">
                   <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Welcome Back!</h2>
-                  <p className="text-slate-500 text-sm mt-1.5">Login to book services or manage your jobs</p>
+                  <p className="text-slate-500 text-sm mt-1.5">Sign in to book services or manage your jobs</p>
                 </div>
 
                 {/* Primary Google Login Button */}
@@ -344,8 +267,8 @@ export default function LoginPage() {
                   )}
                 </button>
 
-                {/* Role Informational Cards (No selection required before Google click) */}
-                <div className="grid grid-cols-2 gap-3 mb-6">
+                {/* Role Context Informational Cards */}
+                <div className="grid grid-cols-2 gap-3 mb-8">
                   <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-left">
                     <div className="flex items-center gap-1.5 font-extrabold text-xs text-amber-800">
                       <span>🏠</span> Customer
@@ -365,145 +288,11 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 my-6">
-                  <div className="h-px bg-slate-200 flex-1" />
-                  <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">OR</span>
-                  <div className="h-px bg-slate-200 flex-1" />
-                </div>
-
-                {/* Phone Auth Option (For existing phone users / recovery) */}
-                <button
-                  type="button"
-                  onClick={() => setShowPhoneAuth(true)}
-                  className="w-full flex items-center justify-center gap-2 py-3 px-4 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors mb-6"
-                >
-                  <Phone size={16} /> Sign in with Phone Number
-                </button>
-
                 <p className="text-center text-xs text-slate-400">
                   By continuing, you agree to OneWayFix's{' '}
                   <Link to="/terms" className="text-blue-600 underline font-medium hover:text-blue-800">Terms</Link> &{' '}
                   <Link to="/privacy" className="text-blue-600 underline font-medium hover:text-blue-800">Privacy Policy</Link>
                 </p>
-              </motion.div>
-
-            /* ── STEP C: PHONE OTP INPUT FORM (Existing Phone Users) ───────────────── */
-            ) : !otpSent ? (
-              <motion.div key="phone-auth" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <button onClick={handleBack} className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800 mb-6 bg-slate-100 px-3 py-1.5 rounded-lg transition-colors">
-                  <ChevronLeft size={16} /> Back to Google Sign-In
-                </button>
-
-                <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-1">Phone Login</h2>
-                <p className="text-slate-500 text-xs mb-6">Enter your registered 10-digit Indian mobile number</p>
-
-                {/* Role Switcher for Phone Login */}
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-6 gap-1.5">
-                  {[
-                    { id: 'customer', label: '👤 Customer', active: 'bg-amber-500 text-white shadow-sm' },
-                    { id: 'provider', label: '🔧 Provider', active: 'bg-blue-600 text-white shadow-sm' }
-                  ].map(r => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setPhoneRole(r.id)}
-                      className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-                        phoneRole === r.id ? r.active : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-
-                <form onSubmit={handleSendOTP} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Phone Number</label>
-                    <div className="flex items-center border-2 border-slate-200 rounded-xl focus-within:border-blue-500 transition-colors">
-                      <span className="pl-4 pr-2 text-slate-500 font-bold text-sm">+91</span>
-                      <div className="w-px h-5 bg-slate-200 mx-1" />
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={handlePhoneChange}
-                        placeholder="9876543210"
-                        className="flex-1 py-3 pr-4 bg-transparent outline-none text-slate-900 font-semibold placeholder:text-slate-400 text-base"
-                        maxLength={10}
-                        autoFocus
-                      />
-                    </div>
-                  </div>
-
-                  {phoneRole === 'provider' && (
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Your Name</label>
-                      <input
-                        type="text"
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                        placeholder="Full Name"
-                        className="w-full py-3 px-4 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500 text-sm font-semibold"
-                      />
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={loading || phone.length !== 10}
-                    className="w-full flex items-center justify-center gap-2 py-3.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all disabled:opacity-50"
-                  >
-                    {loading ? <span className="animate-spin text-base">↻</span> : <>Send Verification OTP <ArrowRight size={16} /></>}
-                  </button>
-                </form>
-              </motion.div>
-
-            /* ── STEP D: VERIFY OTP ────────────────────────────────────────────────── */
-            ) : (
-              <motion.div key="otp-auth" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <button onClick={handleBack} className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800 mb-6 bg-slate-100 px-3 py-1.5 rounded-lg transition-colors">
-                  <ChevronLeft size={16} /> Change Number
-                </button>
-                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Verify OTP</h2>
-                <p className="text-slate-500 text-xs mb-6">
-                  Sent to <span className="font-bold text-slate-800">+91 {otpPhone}</span>
-                </p>
-
-                <div className="flex gap-2 justify-center mb-6">
-                  {otp.map((digit, i) => (
-                    <input
-                      key={i}
-                      ref={el => otpRefs.current[i] = el}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={digit}
-                      onChange={e => handleOTPChange(i, e.target.value)}
-                      onKeyDown={e => handleOTPKeyDown(i, e)}
-                      className={`w-11 h-13 text-center text-xl font-bold border-2 rounded-xl outline-none transition-all
-                        ${digit ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50'}
-                        focus:border-blue-600`}
-                      autoFocus={i === 0}
-                    />
-                  ))}
-                </div>
-
-                <button
-                  onClick={() => handleVerify()}
-                  disabled={loading || otp.join('').length !== 6}
-                  className="w-full py-3.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all disabled:opacity-50 mb-4"
-                >
-                  {loading ? <span className="animate-spin text-base">↻</span> : 'Verify & Continue'}
-                </button>
-
-                <div className="text-center">
-                  {resendTimer > 0 ? (
-                    <p className="text-slate-400 text-xs">Resend code in {resendTimer}s</p>
-                  ) : (
-                    <button onClick={handleResend} className="text-blue-600 text-xs font-bold flex items-center gap-1 mx-auto hover:underline">
-                      <RefreshCw size={14} /> Resend OTP
-                    </button>
-                  )}
-                </div>
               </motion.div>
             )}
           </AnimatePresence>
