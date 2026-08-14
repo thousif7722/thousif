@@ -67,7 +67,7 @@ const UserSchema = new mongoose.Schema({
 UserSchema.index({ 'addresses.location': '2dsphere' });
 UserSchema.index({ createdAt: -1 });                  // SCALE: Admin user list sort
 UserSchema.index({ isBlocked: 1, role: 1 });          // SCALE: Blocked user filter
-UserSchema.index({ phone: 1 }, { unique: true });     // SCALE: Auth lookup (already in schema, explicit for clarity)
+UserSchema.index({ phone: 1 }, { unique: true, sparse: true }); // SCALE: Auth lookup (sparse unique prevents duplicate null errors)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PROVIDER MODEL

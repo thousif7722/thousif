@@ -26,7 +26,8 @@ const googleAuthSchema = Joi.object({
 
 const completeRegSchema = Joi.object({
   idToken: Joi.string().required(),
-  role: Joi.string().valid('customer', 'provider').required(),
+  phone: Joi.string().required(),
+  role: Joi.string().valid('customer', 'provider').optional(),
   name: Joi.string().min(2).max(100).optional(),
   referralCode: Joi.string().optional(),
 });
@@ -36,16 +37,26 @@ const refreshSchema = Joi.object({
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-function normalizeIndianPhone(phoneNumber) {
-  const digits = String(phoneNumber || '').replace(/\D/g, '');
-  const phone = digits.length === 12 && digits.startsWith('91')
-    ? digits.slice(2)
-    : digits.slice(-10);
-
-  if (!/^[6-9]\d{9}$/.test(phone)) {
-    throw new AppError('Firebase phone number must be a valid 10-digit Indian mobile number', 400);
+function normalizeAndValidateIndianPhone(phoneNumber) {
+  if (!phoneNumber || typeof phoneNumber !== 'string') {
+    throw new AppError('Enter a valid 10-digit Indian mobile number.', 400);
   }
-  return phone;
+  const str = phoneNumber.trim();
+  if (/[a-zA-Z]/.test(str)) {
+    throw new AppError('Enter a valid 10-digit Indian mobile number.', 400);
+  }
+  const digitsOnly = str.replace(/\D/g, '');
+  let normalized = digitsOnly;
+  if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+    normalized = digitsOnly.slice(2);
+  } else if (digitsOnly.length === 11 && digitsOnly.startsWith('0')) {
+    normalized = digitsOnly.slice(1);
+  }
+
+  if (!/^[6-9]\d{9}$/.test(normalized)) {
+    throw new AppError('Enter a valid 10-digit Indian mobile number.', 400);
+  }
+  return normalized;
 }
 
 async function verifyFirebaseToken(idToken) {
@@ -71,7 +82,7 @@ async function verifyFirebaseToken(idToken) {
     const decoded = await admin.auth().verifyIdToken(idToken);
     return {
       firebaseUid: decoded.uid,
-      phone: decoded.phone_number ? normalizeIndianPhone(decoded.phone_number) : null,
+      phone: decoded.phone_number ? normalizeAndValidateIndianPhone(decoded.phone_number) : null,
       email: decoded.email || null,
       name: decoded.name || decoded.displayName || null,
       avatar: decoded.picture || decoded.photoURL || null,
@@ -79,7 +90,7 @@ async function verifyFirebaseToken(idToken) {
   } catch (err) {
     if (err instanceof AppError) throw err;
     logger.warn('Firebase ID token verification failed:', err.message);
-    throw new AppError('Invalid or expired Firebase authentication token', 401);
+    throw new AppError('Your Google session has expired. Please sign in again.', 401);
   }
 }
 
@@ -139,8 +150,9 @@ async function formatUserResponse(user) {
 /**
  * POST /auth/google-authenticate
  * Authenticates Firebase Google OAuth Token.
- * Existing user -> returns user info & tokens.
- * New user -> returns isNewUser: true (does NOT create DB record, awaits role selection screen).
+ * Existing user with phone -> returns user info & tokens immediately.
+ * Existing user without phone -> returns needsPhone: true.
+ * New user -> returns isNewUser: true & needsPhone: true.
  */
 router.post('/google-authenticate', validateBody(googleAuthSchema), async (req, res) => {
   const { idToken } = req.body;
@@ -159,6 +171,7 @@ router.post('/google-authenticate', validateBody(googleAuthSchema), async (req, 
     return res.json({
       success: true,
       isNewUser: true,
+      needsPhone: true,
       firebaseUser: {
         firebaseUid,
         email: email || '',
@@ -181,6 +194,23 @@ router.post('/google-authenticate', validateBody(googleAuthSchema), async (req, 
   if (updated) await user.save();
 
   const formattedUser = await formatUserResponse(user);
+
+  // Existing user missing phone number
+  if (!user.phone) {
+    return res.json({
+      success: true,
+      isNewUser: false,
+      needsPhone: true,
+      user: formattedUser,
+      firebaseUser: {
+        firebaseUid,
+        email: user.email || email || '',
+        name: user.name || name || '',
+        avatar: user.avatar || avatar || '',
+      }
+    });
+  }
+
   const targetId = user.role === 'provider' && formattedUser.providerId ? formattedUser.providerId : user._id;
   const tokens = generateTokens(targetId, user.role);
   await storeRefreshToken(targetId, tokens.sessionId, tokens.refreshToken);
@@ -188,6 +218,7 @@ router.post('/google-authenticate', validateBody(googleAuthSchema), async (req, 
   return res.json({
     success: true,
     isNewUser: false,
+    needsPhone: false,
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
     user: formattedUser,
@@ -196,14 +227,18 @@ router.post('/google-authenticate', validateBody(googleAuthSchema), async (req, 
 
 /**
  * POST /auth/complete-registration
- * Completes registration for new user after role selection.
+ * Completes registration for new user or saves missing phone number for existing user.
  */
 router.post('/complete-registration', validateBody(completeRegSchema), async (req, res) => {
-  const { idToken, role, name, referralCode } = req.body;
+  const { idToken, phone, role, name, referralCode } = req.body;
   const fbUser = await verifyFirebaseToken(idToken);
   const { firebaseUid, email, avatar } = fbUser;
   const displayName = name?.trim() || fbUser.name || '';
 
+  // 1. Validate & Normalize Indian Mobile Number
+  const normalizedPhone = normalizeAndValidateIndianPhone(phone);
+
+  // 2. Search existing user by firebaseUid OR email
   let user = await User.findOne({
     $or: [
       { firebaseUid },
@@ -211,60 +246,87 @@ router.post('/complete-registration', validateBody(completeRegSchema), async (re
     ]
   });
 
+  // 3. Check for Duplicate Mobile Number across all registered users
+  const existingPhoneUser = await User.findOne({ phone: normalizedPhone });
+  if (existingPhoneUser && (!user || existingPhoneUser._id.toString() !== user._id.toString())) {
+    throw new AppError('This mobile number is already registered with another OneWayFix account.', 400);
+  }
+
   let isNewUser = false;
   if (!user) {
+    // New registration: strictly validate role
+    if (!role || !['customer', 'provider'].includes(role)) {
+      throw new AppError('Public registration only permits Customer or Provider account selection.', 400);
+    }
     isNewUser = true;
     user = new User({
+      phone: normalizedPhone,
       firebaseUid,
       email: email || undefined,
       name: displayName,
       avatar: avatar || undefined,
       role: role,
       status: 'active',
-      referralCode: `REF${Date.now().toString(36).toUpperCase()}`
+      referralCode: `REF${normalizedPhone.slice(-4)}${Date.now().toString(36).toUpperCase()}`
     });
     await user.save();
   } else {
-    user.role = role;
+    // Existing user saving missing phone number
+    user.phone = normalizedPhone;
+    if (role && ['customer', 'provider'].includes(role)) {
+      user.role = role;
+    }
     if (!user.firebaseUid) user.firebaseUid = firebaseUid;
     if (displayName && !user.name) user.name = displayName;
     await user.save();
   }
 
   let providerRecord = null;
-  if (role === 'provider') {
+  const targetRole = user.role;
+
+  if (targetRole === 'provider') {
     providerRecord = await Provider.findOne({ userId: user._id });
     if (!providerRecord) {
       providerRecord = await Provider.create({
         userId: user._id,
+        phone: normalizedPhone,
         email: email || undefined,
         name: displayName || 'Service Provider',
         avatar: avatar || undefined,
         approvalStatus: 'pending',
         currentLocation: { type: 'Point', coordinates: [0, 0] }
       });
+    } else {
+      let updatedProvider = false;
+      if (!providerRecord.phone) { providerRecord.phone = normalizedPhone; updatedProvider = true; }
+      if (!providerRecord.email && email) { providerRecord.email = email; updatedProvider = true; }
+      if (updatedProvider) await providerRecord.save();
     }
   }
 
-  // Handle referral reward for customer
-  if (referralCode && isNewUser && role === 'customer') {
+  // Handle referral reward for new customer
+  if (referralCode && isNewUser && targetRole === 'customer') {
     const referrer = await User.findOne({ referralCode });
     if (referrer && referrer._id.toString() !== user._id.toString()) {
       user.referredBy = referrer._id;
       await user.save();
-      const { notificationQueue } = require('../../jobs');
-      notificationQueue.add('referral_reward', { referrerId: referrer._id, newUserId: user._id });
+      try {
+        const { notificationQueue } = require('../../jobs');
+        notificationQueue.add('referral_reward', { referrerId: referrer._id, newUserId: user._id });
+      } catch (e) {
+        logger.warn('Failed to queue referral reward:', e.message);
+      }
     }
   }
 
   const formattedUser = await formatUserResponse(user);
-  const targetId = role === 'provider' && providerRecord ? providerRecord._id : user._id;
-  const tokens = generateTokens(targetId, role);
+  const targetId = targetRole === 'provider' && providerRecord ? providerRecord._id : user._id;
+  const tokens = generateTokens(targetId, targetRole);
   await storeRefreshToken(targetId, tokens.sessionId, tokens.refreshToken);
 
   return res.json({
     success: true,
-    isNewUser: true,
+    isNewUser,
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
     user: formattedUser,

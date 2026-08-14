@@ -83,9 +83,11 @@ export const loginWithGoogle = createAsyncThunk('auth/loginWithGoogle', async (_
 
     const res = await apiService.googleAuthenticate({ idToken });
 
-    if (res.data.isNewUser) {
+    if (res.data.needsPhone || res.data.isNewUser || !res.data.user?.phone) {
       return {
-        isNewUser: true,
+        needsPhone: true,
+        isNewUser: Boolean(res.data.isNewUser),
+        existingUser: res.data.user || null,
         pendingGoogleUser: {
           idToken,
           ...(res.data.firebaseUser || googleUserData)
@@ -97,15 +99,15 @@ export const loginWithGoogle = createAsyncThunk('auth/loginWithGoogle', async (_
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
     localStorage.setItem('user', JSON.stringify(user));
-    return { isNewUser: false, accessToken, refreshToken, user };
+    return { needsPhone: false, isNewUser: false, accessToken, refreshToken, user };
   } catch (err) {
     return rejectWithValue(err.response?.data?.error || err.message || 'Google authentication failed');
   }
 });
 
-export const completeRegistration = createAsyncThunk('auth/completeRegistration', async ({ idToken, role, name, referralCode }, { rejectWithValue }) => {
+export const completeRegistration = createAsyncThunk('auth/completeRegistration', async ({ idToken, phone, role, name, referralCode }, { rejectWithValue }) => {
   try {
-    const res = await apiService.completeRegistration({ idToken, role, name, referralCode });
+    const res = await apiService.completeRegistration({ idToken, phone, role, name, referralCode });
     const { accessToken, refreshToken, user } = res.data;
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
@@ -163,6 +165,9 @@ const authSlice = createSlice({
     accessToken: localStorage.getItem('accessToken'),
     otpSent: false,
     otpPhone: null,
+    needsPhone: false,
+    isNewUser: false,
+    existingUserToUpdate: null,
     needsRoleSelection: false,
     pendingGoogleUser: null,
     loading: false,
@@ -172,7 +177,13 @@ const authSlice = createSlice({
     setUser(state, action) { state.user = action.payload; },
     clearError(state) { state.error = null; },
     resetOtp(state) { state.otpSent = false; state.otpPhone = null; },
-    resetRoleSelection(state) { state.needsRoleSelection = false; state.pendingGoogleUser = null; },
+    resetRoleSelection(state) {
+      state.needsPhone = false;
+      state.isNewUser = false;
+      state.existingUserToUpdate = null;
+      state.needsRoleSelection = false;
+      state.pendingGoogleUser = null;
+    },
     updateUser(state, action) { state.user = { ...state.user, ...action.payload }; },
   },
   extraReducers: (builder) => {
@@ -203,12 +214,18 @@ const authSlice = createSlice({
       .addCase(loginWithGoogle.pending, (state) => { state.loading = true; state.error = null; })
       .addCase(loginWithGoogle.fulfilled, (state, action) => {
         state.loading = false;
-        if (action.payload.isNewUser) {
-          state.needsRoleSelection = true;
+        if (action.payload.needsPhone) {
+          state.needsPhone = true;
+          state.isNewUser = action.payload.isNewUser;
+          state.existingUserToUpdate = action.payload.existingUser;
           state.pendingGoogleUser = action.payload.pendingGoogleUser;
+          state.needsRoleSelection = false;
         } else {
           state.user = action.payload.user;
           state.accessToken = action.payload.accessToken;
+          state.needsPhone = false;
+          state.isNewUser = false;
+          state.existingUserToUpdate = null;
           state.needsRoleSelection = false;
           state.pendingGoogleUser = null;
         }
@@ -223,9 +240,12 @@ const authSlice = createSlice({
         state.loading = false;
         state.user = action.payload.user;
         state.accessToken = action.payload.accessToken;
+        state.needsPhone = false;
+        state.isNewUser = false;
+        state.existingUserToUpdate = null;
         state.needsRoleSelection = false;
         state.pendingGoogleUser = null;
-        toast.success(`Welcome to OneWayFix, ${action.payload.user.name || 'Partner'}!`);
+        toast.success(`Welcome to OneWayFix, ${action.payload.user.name || 'User'}!`);
       })
       .addCase(completeRegistration.rejected, (state, action) => {
         state.loading = false;
@@ -246,6 +266,9 @@ const authSlice = createSlice({
         state.user = null;
         state.accessToken = null;
         state.otpSent = false;
+        state.needsPhone = false;
+        state.isNewUser = false;
+        state.existingUserToUpdate = null;
         state.needsRoleSelection = false;
         state.pendingGoogleUser = null;
       })
@@ -269,6 +292,9 @@ export const selectUser = (state) => state.auth.user;
 export const selectIsAuthenticated = (state) => !!state.auth.user;
 export const selectAuthLoading = (state) => state.auth.loading;
 export const selectUserRole = (state) => state.auth.user?.role;
+export const selectNeedsPhone = (state) => state.auth.needsPhone;
+export const selectIsNewUser = (state) => state.auth.isNewUser;
+export const selectExistingUserToUpdate = (state) => state.auth.existingUserToUpdate;
 export const selectNeedsRoleSelection = (state) => state.auth.needsRoleSelection;
 export const selectPendingGoogleUser = (state) => state.auth.pendingGoogleUser;
 export default authSlice.reducer;

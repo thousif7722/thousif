@@ -66,7 +66,23 @@ async function attemptConnection(uri, options) {
 async function ensureIndexes() {
   try {
     // ── Critical geo indexes for provider matching (Urban Company-style location assignment)
-    const { Booking, Provider } = require('../models');
+    const { User, Booking, Provider } = require('../models');
+
+    // Ensure User phone index is unique & sparse (prevents E11000 duplicate null errors)
+    try {
+      const userIndexes = await User.collection.indexes();
+      const phoneIdx = userIndexes.find(idx => idx.name === 'phone_1');
+      if (phoneIdx && !phoneIdx.sparse) {
+        logger.info('Dropping non-sparse phone_1 index from User collection...');
+        await User.collection.dropIndex('phone_1');
+      }
+      await User.collection.createIndex(
+        { phone: 1 },
+        { unique: true, sparse: true, background: true, name: 'phone_1' }
+      );
+    } catch (e) {
+      logger.warn('User phone index check warning:', e.message);
+    }
 
     // Booking: 2dsphere index on serviceAddress.location for geo queries
     await Booking.collection.createIndex(

@@ -1,14 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, ChevronLeft, ShieldCheck, Star } from 'lucide-react';
+import { ArrowRight, ChevronLeft } from 'lucide-react';
 import {
   loginWithGoogle,
   completeRegistration,
   resetRoleSelection,
   selectAuthLoading,
   selectUser,
+  selectNeedsPhone,
+  selectIsNewUser,
+  selectExistingUserToUpdate,
   selectNeedsRoleSelection,
   selectPendingGoogleUser
 } from '@/store/slices/authSlice';
@@ -25,6 +28,9 @@ export default function LoginPage() {
 
   const loading = useSelector(selectAuthLoading);
   const user = useSelector(selectUser);
+  const needsPhone = useSelector(selectNeedsPhone);
+  const isNewUser = useSelector(selectIsNewUser);
+  const existingUserToUpdate = useSelector(selectExistingUserToUpdate);
   const needsRoleSelection = useSelector(selectNeedsRoleSelection);
   const pendingGoogleUser = useSelector(selectPendingGoogleUser);
   const settings = useSelector(selectPublicSettings);
@@ -32,9 +38,14 @@ export default function LoginPage() {
   const siteName = settings?.siteName || 'OneWayFix';
   const logoUrl = settings?.logoUrl;
 
+  const [phoneInput, setPhoneInput] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [validatedPhone, setValidatedPhone] = useState('');
+  const [showRoleStep, setShowRoleStep] = useState(false);
+
   // Auto-redirect logged-in users to their respective home pages
   useEffect(() => {
-    if (user && !needsRoleSelection) {
+    if (user && !needsPhone && !needsRoleSelection && !showRoleStep) {
       const from = location.state?.from?.pathname;
       if (from && from !== '/login') {
         navigate(from, { replace: true });
@@ -52,28 +63,82 @@ export default function LoginPage() {
         navigate('/', { replace: true });
       }
     }
-  }, [user, needsRoleSelection, navigate, location]);
+  }, [user, needsPhone, needsRoleSelection, showRoleStep, navigate, location]);
 
   function handleGoogleLogin() {
     dispatch(loginWithGoogle());
   }
 
+  function validateAndNormalizePhone(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    const str = raw.trim();
+    if (/[a-zA-Z]/.test(str)) return null;
+    const digits = str.replace(/\D/g, '');
+    let normalized = digits;
+    if (digits.length === 12 && digits.startsWith('91')) {
+      normalized = digits.slice(2);
+    } else if (digits.length === 11 && digits.startsWith('0')) {
+      normalized = digits.slice(1);
+    }
+    if (!/^[6-9]\d{9}$/.test(normalized)) return null;
+    return normalized;
+  }
+
+  function handlePhoneSubmit(e) {
+    e.preventDefault();
+    setPhoneError('');
+    const normalized = validateAndNormalizePhone(phoneInput);
+    if (!normalized) {
+      setPhoneError('Enter a valid 10-digit Indian mobile number.');
+      toast.error('Enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+
+    setValidatedPhone(normalized);
+
+    // If user already exists with an assigned role (e.g. customer/provider), save phone directly
+    if (!isNewUser && existingUserToUpdate?.role) {
+      dispatch(completeRegistration({
+        idToken: pendingGoogleUser?.idToken,
+        phone: normalized,
+        role: existingUserToUpdate.role,
+        name: existingUserToUpdate.name || pendingGoogleUser?.name || '',
+      }));
+    } else {
+      // New user -> proceed to role selection step
+      setShowRoleStep(true);
+    }
+  }
+
   function handleCompleteRegistration(chosenRole) {
     if (!pendingGoogleUser?.idToken) {
-      toast.error('Session expired. Please sign in with Google again.');
+      toast.error('Your Google session has expired. Please sign in again.');
       dispatch(resetRoleSelection());
+      return;
+    }
+    const phoneToUse = validatedPhone || validateAndNormalizePhone(phoneInput);
+    if (!phoneToUse) {
+      toast.error('Enter a valid 10-digit Indian mobile number.');
+      setShowRoleStep(false);
       return;
     }
     dispatch(completeRegistration({
       idToken: pendingGoogleUser.idToken,
+      phone: phoneToUse,
       role: chosenRole,
       name: pendingGoogleUser.name || '',
     }));
   }
 
   function handleBack() {
-    if (needsRoleSelection) {
+    if (showRoleStep) {
+      setShowRoleStep(false);
+    } else if (needsPhone || needsRoleSelection) {
       dispatch(resetRoleSelection());
+      setPhoneInput('');
+      setPhoneError('');
+      setValidatedPhone('');
+      setShowRoleStep(false);
     }
   }
 
@@ -156,19 +221,94 @@ export default function LoginPage() {
           </div>
 
           <AnimatePresence mode="wait">
-            {/* ── STEP 1: NEW USER ROLE SELECTION SCREEN ──────────────────────────────── */}
-            {needsRoleSelection ? (
+            {/* ── STEP 1: MOBILE NUMBER COLLECTION SCREEN ──────────────────────────────── */}
+            {needsPhone && !showRoleStep ? (
+              <motion.div key="phone-input" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <button
+                  onClick={handleBack}
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 mb-6 bg-slate-100 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <ChevronLeft size={16} /> Back
+                </button>
+
+                <div className="text-center mb-6">
+                  <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-3 text-2xl font-bold shadow-sm">
+                    📱
+                  </div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Almost there!</h2>
+                  <p className="text-slate-500 text-xs sm:text-sm mt-1.5 leading-relaxed max-w-sm mx-auto">
+                    Enter your mobile number so we can contact you about bookings, service updates and support.
+                  </p>
+                </div>
+
+                <form onSubmit={handlePhoneSubmit} className="space-y-4 mb-6">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      Mobile Number
+                    </label>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3.5 text-sm font-bold text-slate-700 select-none flex items-center gap-1">
+                        <span>🇮🇳</span> +91
+                      </span>
+                      <input
+                        type="tel"
+                        maxLength={13}
+                        value={phoneInput}
+                        onChange={(e) => {
+                          setPhoneInput(e.target.value);
+                          if (phoneError) setPhoneError('');
+                        }}
+                        placeholder="98765 43210"
+                        autoFocus
+                        className={`w-full pl-16 pr-4 py-3.5 text-slate-900 text-base font-bold rounded-2xl border-2 transition-all ${
+                          phoneError
+                            ? 'border-red-500 bg-red-50/30 focus:ring-red-200'
+                            : 'border-slate-200 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10'
+                        }`}
+                      />
+                    </div>
+                    {phoneError && (
+                      <p className="text-xs text-red-600 font-semibold mt-1.5 flex items-center gap-1">
+                        <span>⚠️</span> {phoneError}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading || !phoneInput.trim()}
+                    className="w-full py-3.5 px-6 text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {loading ? (
+                      <span className="animate-spin text-base">↻</span>
+                    ) : (
+                      <>
+                        Continue <ArrowRight size={18} />
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center">
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Your number is used for service communication and support.
+                  </p>
+                </div>
+              </motion.div>
+
+            /* ── STEP 2: ROLE SELECTION SCREEN (FOR NEW USERS) ─────────────────────── */
+            ) : (needsRoleSelection || showRoleStep) ? (
               <motion.div key="role-selection" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <button
                   onClick={handleBack}
                   className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 mb-6 bg-slate-100 px-3 py-1.5 rounded-lg transition-colors"
                 >
-                  <ChevronLeft size={16} /> Change Account
+                  <ChevronLeft size={16} /> Back
                 </button>
 
                 <div className="text-center mb-8">
                   <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-3 py-1 rounded-full inline-block mb-2">
-                    Google Sign-In Successful
+                    Mobile Number Verified
                   </span>
                   <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">How will you use {siteName}?</h2>
                   <p className="text-slate-500 text-sm mt-1">
@@ -191,18 +331,18 @@ export default function LoginPage() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
                           <h3 className="font-extrabold text-slate-900 text-lg group-hover:text-amber-700 transition-colors">
-                            I'm a Customer
+                            Customer
                           </h3>
                           <ArrowRight size={18} className="text-amber-600 group-hover:translate-x-1 transition-transform" />
                         </div>
                         <p className="text-slate-600 text-xs mt-1 leading-relaxed">
-                          Book trusted home repair, cleaning & inspection services with instant pricing.
+                          Book trusted home services
                         </p>
                       </div>
                     </div>
                   </button>
 
-                  {/* Provider Option Card */}
+                  {/* Service Provider Option Card */}
                   <button
                     type="button"
                     onClick={() => handleCompleteRegistration('provider')}
@@ -216,12 +356,12 @@ export default function LoginPage() {
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
                           <h3 className="font-extrabold text-slate-900 text-lg group-hover:text-blue-700 transition-colors">
-                            I'm a Service Provider
+                            Service Provider
                           </h3>
                           <ArrowRight size={18} className="text-blue-600 group-hover:translate-x-1 transition-transform" />
                         </div>
                         <p className="text-slate-600 text-xs mt-1 leading-relaxed">
-                          Accept local job requests, manage earnings, and grow your service business.
+                          Manage jobs & earnings
                         </p>
                       </div>
                     </div>
@@ -235,12 +375,12 @@ export default function LoginPage() {
                 )}
               </motion.div>
 
-            /* ── STEP 2: GOOGLE SIGN-IN PRIMARY SCREEN ──────────────────────────────── */
+            /* ── STEP 3: GOOGLE SIGN-IN PRIMARY SCREEN ──────────────────────────────── */
             ) : (
               <motion.div key="main-login" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <div className="text-center mb-8">
                   <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Welcome Back!</h2>
-                  <p className="text-slate-500 text-sm mt-1.5">Sign in to book services or manage your jobs</p>
+                  <p className="text-slate-500 text-sm mt-1.5">Login to book services or manage your jobs</p>
                 </div>
 
                 {/* Primary Google Login Button */}
