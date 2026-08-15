@@ -73,24 +73,32 @@ export default function DesktopHeader() {
   const role = user?.role || 'customer';
   let links = NAV_LINKS[role] || NAV_LINKS.customer;
 
-  if (role === 'admin' || role === 'staff') {
-    const p = user?.permissions || [];
-    const has = (perm) => role === 'admin' || p.includes(perm);
+  const [moreToolsOpen, setMoreToolsOpen] = useState(false);
+  const moreToolsRef = useRef(null);
 
+  const p = user?.permissions || [];
+  const has = (perm) => role === 'admin' || p.includes(perm);
+
+  let secondaryAdminLinks = [];
+
+  if (role === 'admin' || role === 'staff') {
     links = [{ to: '/admin', label: 'Dashboard', icon: BarChart2 }];
     if (has('manage_bookings')) links.push({ to: '/admin/bookings', label: 'Bookings', icon: BookOpen });
     if (has('manage_providers')) links.push({ to: '/admin/providers', label: 'Providers', icon: Shield });
-    if (has('manage_complaints')) links.push({ to: '/admin/complaints', label: 'Complaints', icon: Bell });
+    if (has('manage_complaints')) links.push({ to: '/admin/complaints', label: 'Complaints', icon: AlertTriangle });
+    if (has('manage_financials')) links.push({ to: '/admin/financials', label: 'Financials', icon: DollarSign });
+
+    // Secondary Admin / Staff links placed inside the 'More Tools' dropdown
     if (has('manage_financials')) {
-      links.push({ to: '/admin/financials', label: 'Financials', icon: DollarSign });
-      links.push({ to: '/admin/invoice-settings', label: 'Invoice & GST', icon: FileText });
+      secondaryAdminLinks.push({ to: '/admin/invoice-settings', label: 'Invoice & GST', icon: FileText });
     }
-    if (has('manage_services')) links.push({ to: '/admin/services', label: 'Services', icon: Briefcase });
-    if (has('manage_users')) links.push({ to: '/admin/users', label: 'Users', icon: User });
+    if (has('manage_services')) secondaryAdminLinks.push({ to: '/admin/services', label: 'Services', icon: Briefcase });
+    if (has('manage_users')) secondaryAdminLinks.push({ to: '/admin/users', label: 'Users', icon: User });
     if (role === 'admin') {
-      links.push({ to: '/admin/team', label: 'Team', icon: Briefcase });
-      links.push({ to: '/admin/announcements', label: 'Broadcast', icon: Bell });
-      links.push({ to: '/admin/settings', label: 'Settings', icon: Settings });
+      secondaryAdminLinks.push({ to: '/admin/team', label: 'Team', icon: Briefcase });
+      secondaryAdminLinks.push({ to: '/admin/announcements', label: 'Broadcast', icon: Bell });
+      secondaryAdminLinks.push({ to: '/admin/settings/branding', label: 'Branding & Assets', icon: Settings });
+      secondaryAdminLinks.push({ to: '/admin/settings', label: 'Platform Settings', icon: Settings });
     }
   }
 
@@ -102,6 +110,7 @@ export default function DesktopHeader() {
     function handleClick(e) {
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
       if (locRef.current && !locRef.current.contains(e.target)) setLocationModalOpen(false);
+      if (moreToolsRef.current && !moreToolsRef.current.contains(e.target)) setMoreToolsOpen(false);
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -251,10 +260,46 @@ export default function DesktopHeader() {
 
         <nav className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
           {links.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${location.pathname === to ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <Link key={to} to={to} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 ${location.pathname === to ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
               <Icon size={16} /> {label}
             </Link>
           ))}
+
+          {secondaryAdminLinks.length > 0 && (
+            <div className="relative shrink-0" ref={moreToolsRef}>
+              <button
+                onClick={() => setMoreToolsOpen(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  secondaryAdminLinks.some(l => location.pathname === l.to)
+                    ? 'bg-primary-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span>More</span>
+                <ChevronDown size={14} className={`transition-transform ${moreToolsOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {moreToolsOpen && (
+                <div className="absolute right-0 top-11 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 animate-in fade-in zoom-in-95">
+                  {secondaryAdminLinks.map(({ to, label, icon: Icon }) => (
+                    <Link
+                      key={to}
+                      to={to}
+                      onClick={() => setMoreToolsOpen(false)}
+                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-colors ${
+                        location.pathname === to
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon size={15} className={location.pathname === to ? 'text-white' : 'text-primary-600'} />
+                      <span>{label}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
 
         <div className="flex items-center gap-2 shrink-0">

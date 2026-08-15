@@ -300,82 +300,179 @@ export default function AdminSettings() {
     );
   }
 
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const TABS = [
+    { id: 'branding', label: 'Brand Identity', icon: Globe, desc: 'S3 Logos, Site Name, Tagline & Currency' },
+    { id: 'financials', label: 'Fees & Taxes', icon: DollarSign, desc: 'GST %, Platform Fee, Plus Membership' },
+    { id: 'contact', label: 'Support & Info', icon: Phone, desc: 'Helpline, Support Email & Working Hours' },
+    { id: 'catbanners', label: 'Category Banners', icon: Image, desc: 'Hero banners for AC, Cleaning, Plumbing' },
+    { id: 'social', label: 'Social & Mobile', icon: Share2, desc: 'Social handles, PlayStore & APK links' },
+    { id: 'providers', label: 'Provider Rules', icon: Users, desc: 'Commission %, KYC policy & Payout limits' },
+    { id: 'seo', label: 'SEO & Analytics', icon: Search, desc: 'Google search meta tags & GA ID' },
+    { id: 'legal', label: 'Legal Policies', icon: FileText, desc: 'Terms of Service, Privacy & Refund policy' },
+    { id: 'announcements', label: 'Banners & Reels', icon: Megaphone, desc: 'Announcement bar & Video spotlights' },
+    { id: 'ops', label: 'System Controls', icon: Wrench, desc: 'Maintenance mode & Booking controls' },
+  ];
+
+  const filteredTabs = TABS.filter(t => 
+    !searchQuery || 
+    t.label.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    t.desc.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-24">
       <Header />
       
-      <main className="py-6 px-4 max-w-5xl mx-auto space-y-6">
+      <main className="py-6 px-4 max-w-6xl mx-auto space-y-6">
         
-        {/* Header */}
+        {/* Top Header Hub */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
           <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-primary-600 uppercase tracking-widest mb-1">
+            <div className="flex items-center gap-2 text-xs font-extrabold text-primary-600 uppercase tracking-widest mb-1">
               <Settings size={16} /> Admin Control Center
             </div>
-            <h1 className="text-2xl font-extrabold text-slate-900">Website & Store Settings</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Manage logo, website name, fees, announcements, and video reels</p>
+            <h1 className="text-2xl font-extrabold text-slate-900">Website & Platform Settings</h1>
+            <p className="text-slate-500 text-sm mt-0.5">Centralized hub to manage brand identity, pricing, policies, and system controls</p>
           </div>
 
-          <button
-            onClick={handleSaveSettings}
-            disabled={saving}
-            className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary-600/20 shrink-0"
-          >
-            {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={18} />}
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSaveSettings}
+              disabled={saving}
+              className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-extrabold rounded-2xl text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary-600/20 shrink-0"
+            >
+              {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={18} />}
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
         </div>
 
-        {/* Invoice & GST Customization Quick Link Banner */}
-        <div className="bg-gradient-to-r from-teal-900 via-emerald-900 to-slate-900 text-white rounded-3xl p-6 shadow-md border border-teal-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-teal-500/20 text-teal-300 flex items-center justify-center font-bold text-xl shrink-0">
-              <FileText size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-base">Invoice & GST Customization Engine</h3>
-                <span className="text-[10px] font-extrabold uppercase bg-teal-500 text-slate-950 px-2.5 py-0.5 rounded-full">NEW</span>
+        {/* Top Quick Access Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <a
+            href="/admin/settings/branding"
+            className="bg-gradient-to-br from-slate-900 to-primary-950 text-white rounded-3xl p-5 shadow-sm hover:shadow-md transition-all border border-slate-800 flex flex-col justify-between group"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-2xl bg-teal-500/20 text-teal-300 flex items-center justify-center font-bold">
+                <Globe size={20} />
               </div>
-              <p className="text-xs text-teal-200 mt-1">Configure invoice calculation rules, GST split (Inclusive/Exclusive), charges table, colors, guarantee card, and download live sample PDFs.</p>
+              <span className="text-[10px] font-extrabold bg-teal-400 text-slate-950 px-2.5 py-0.5 rounded-full uppercase">S3 Assets</span>
             </div>
-          </div>
+            <div className="mt-4">
+              <h3 className="font-extrabold text-base text-white group-hover:text-teal-300 transition-colors">Branding & Logos</h3>
+              <p className="text-xs text-slate-300 mt-1">Upload 6 brand logos & favicons directly to Amazon S3</p>
+            </div>
+            <span className="text-xs font-bold text-teal-400 mt-3 inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+              Open Branding Manager →
+            </span>
+          </a>
 
           <a
             href="/admin/invoice-settings"
-            className="px-5 py-3 bg-teal-400 hover:bg-teal-300 text-slate-950 font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 shrink-0 transition-all shadow-lg shadow-teal-400/20"
+            className="bg-gradient-to-br from-teal-900 to-slate-900 text-white rounded-3xl p-5 shadow-sm hover:shadow-md transition-all border border-teal-800 flex flex-col justify-between group"
           >
-            <span>Open Invoice & GST Module</span> ⚡
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold">
+                <FileText size={20} />
+              </div>
+              <span className="text-[10px] font-extrabold bg-emerald-400 text-slate-950 px-2.5 py-0.5 rounded-full uppercase">GST & Invoice</span>
+            </div>
+            <div className="mt-4">
+              <h3 className="font-extrabold text-base text-white group-hover:text-emerald-300 transition-colors">Invoice Customization</h3>
+              <p className="text-xs text-teal-200 mt-1">GST split rules, charge tables, colors & guarantee card</p>
+            </div>
+            <span className="text-xs font-bold text-emerald-400 mt-3 inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+              Configure Invoices →
+            </span>
           </a>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('financials')}
+            className={`rounded-3xl p-5 text-left transition-all border shadow-sm flex flex-col justify-between group ${
+              activeTab === 'financials' ? 'bg-amber-50 border-amber-300' : 'bg-white border-slate-100 hover:border-amber-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
+                <DollarSign size={20} />
+              </div>
+              <span className="text-[10px] font-extrabold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">GST {gstRate}%</span>
+            </div>
+            <div className="mt-4">
+              <h3 className="font-extrabold text-base text-slate-900 group-hover:text-amber-600 transition-colors">Fees & Taxes</h3>
+              <p className="text-xs text-slate-500 mt-1">Platform fee ₹{platformFee}, GST rate, Plus subscriptions</p>
+            </div>
+            <span className="text-xs font-bold text-amber-600 mt-3 inline-flex items-center gap-1">
+              Edit Fees & Taxes →
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('ops')}
+            className={`rounded-3xl p-5 text-left transition-all border shadow-sm flex flex-col justify-between group ${
+              activeTab === 'ops' ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-100 hover:border-indigo-200'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center font-bold">
+                <Wrench size={20} />
+              </div>
+              <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${maintenanceMode ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                {maintenanceMode ? 'Maintenance ON' : 'System Live'}
+              </span>
+            </div>
+            <div className="mt-4">
+              <h3 className="font-extrabold text-base text-slate-900 group-hover:text-indigo-600 transition-colors">System Controls</h3>
+              <p className="text-xs text-slate-500 mt-1">Toggle maintenance mode, enable/disable live bookings</p>
+            </div>
+            <span className="text-xs font-bold text-indigo-600 mt-3 inline-flex items-center gap-1">
+              System Controls →
+            </span>
+          </button>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Settings Search Bar */}
+        <div className="relative">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search all settings (e.g. GST, Commission, Logo, Phone, Meta, Maintenance)..."
+            className="w-full bg-white border border-slate-200 pl-11 pr-4 py-3.5 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 shadow-sm transition-all"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-600 bg-slate-100 px-2 py-1 rounded-lg"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Navigation Tabs Bar */}
         <div className="flex overflow-x-auto bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 gap-1 scrollbar-hide">
-          {[
-            { id: 'branding', label: '🎨 Identity', icon: Globe },
-            { id: 'contact', label: '📞 Support', icon: Phone },
-            { id: 'financials', label: '💰 Fees & Taxes', icon: DollarSign },
-            { id: 'catbanners', label: '🖼️ Category Banners', icon: Image },
-            { id: 'social', label: '🌐 Social & Apps', icon: Share2 },
-            { id: 'providers', label: '👷 Provider Rules', icon: Users },
-            { id: 'seo', label: '🔍 SEO & Meta', icon: Search },
-            { id: 'legal', label: '📜 Policies', icon: FileText },
-            { id: 'announcements', label: '📢 Banners & Reels', icon: Megaphone },
-            { id: 'ops', label: '🛠️ Operations', icon: Wrench },
-          ].map(tab => {
+          {filteredTabs.map(tab => {
             const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shrink-0 ${
-                  activeTab === tab.id
+                className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 ${
+                  isActive
                     ? 'bg-slate-900 text-white shadow-md'
-                    : 'text-slate-500 hover:text-slate-800'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                <Icon size={15} />
-                {tab.label}
+                <Icon size={15} className={isActive ? 'text-teal-400' : 'text-slate-400'} />
+                <span>{tab.label}</span>
               </button>
             );
           })}
@@ -393,29 +490,38 @@ export default function AdminSettings() {
               </span>
             </div>
 
-            {/* ── NEW: S3-Backed Branding Assets Banner ── */}
-            <div className="bg-gradient-to-r from-primary-900 via-teal-900 to-slate-900 text-white rounded-3xl p-5 border border-teal-700 shadow-md">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0">
-                    <Image size={24} />
+            {/* ── S3-Backed Branding Assets Hero Card ── */}
+            <div className="bg-gradient-to-r from-slate-900 via-primary-950 to-teal-950 text-white rounded-3xl p-6 border border-teal-700/50 shadow-md">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0 mt-1">
+                    <Sparkles size={26} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="font-extrabold text-base">Branding & Assets Manager</h3>
-                      <span className="text-[10px] font-extrabold uppercase bg-teal-400 text-slate-950 px-2 py-0.5 rounded-full">NEW</span>
+                      <h3 className="font-extrabold text-lg text-white">Centralized S3 Branding Assets Manager</h3>
+                      <span className="text-[10px] font-extrabold uppercase bg-teal-400 text-slate-950 px-2.5 py-0.5 rounded-full">RECOMMENDED</span>
                     </div>
-                    <p className="text-xs text-teal-200 mt-1">
-                      Upload Logo, Favicon, Dark Logo, App Icon, Login Logo & Invoice Logo directly to Amazon S3.
-                      No manual URL entry required.
+                    <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
+                      Upload, preview, and delete 6 core branding assets (Main Logo, Favicon, Dark Mode Logo, App Icon, Login Logo & Invoice Logo) directly stored in Amazon S3 with dynamic cache busting.
                     </p>
+
+                    {/* Branding Quick Badges */}
+                    <div className="flex flex-wrap items-center gap-2 mt-3">
+                      {['Main Logo', 'Favicon', 'Dark Logo', 'App Icon', 'Login Logo', 'Invoice Logo'].map(asset => (
+                        <span key={asset} className="text-[10px] font-bold bg-white/10 text-teal-200 px-2.5 py-1 rounded-lg border border-white/10">
+                          ✓ {asset}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
+
                 <a
                   href="/admin/settings/branding"
-                  className="px-5 py-3 bg-teal-400 hover:bg-teal-300 text-slate-950 font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 shrink-0 transition-all shadow-lg"
+                  className="px-6 py-3.5 bg-teal-400 hover:bg-teal-300 text-slate-950 font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 shrink-0 transition-all shadow-lg hover:scale-105"
                 >
-                  <Upload size={14} /> Open Branding Manager ⚡
+                  <Upload size={16} /> Open Branding & Assets Manager ⚡
                 </a>
               </div>
             </div>
@@ -425,119 +531,20 @@ export default function AdminSettings() {
               {/* Site Name */}
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">
-                  Replace Website / Brand Name
+                  Website / Brand Name
                 </label>
                 <input
                   type="text"
                   value={siteName}
                   onChange={e => setSiteName(e.target.value)}
-                  placeholder="e.g. ServiceHub or MyBrand"
+                  placeholder="e.g. ServiceHub or OneWayFix"
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">Replaces "ServiceHub" text across the application header, footer, and titles.</p>
-              </div>
-
-              {/* Logo Upload & URL */}
-              <div>
-                <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">
-                  Replace UI Logo (Upload File or Enter Image URL)
-                </label>
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                    <label className="cursor-pointer px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-primary-600/20 transition-all shrink-0">
-                      <Upload size={16} />
-                      <span>Upload Logo File</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setLogoUrl(reader.result);
-                              toast.success('New logo loaded into preview! Click Save Settings to apply live.');
-                            };
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                      />
-                    </label>
-
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        value={logoUrl}
-                        onChange={e => setLogoUrl(e.target.value)}
-                        placeholder="e.g. /logo.png or https://example.com/logo.png"
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {logoUrl && logoUrl !== '/logo.png' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLogoUrl('/logo.png');
-                        toast.success('Reset to default text logo!');
-                      }}
-                      className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1"
-                    >
-                      <Trash2 size={13} /> Reset to Default Logo
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Favicon & Google Search Result Icon Upload & URL */}
-              <div>
-                <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">
-                  Replace Website Favicon & Google Search Icon (Upload File or Enter Image URL)
-                </label>
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                    <label className="cursor-pointer px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20 transition-all shrink-0">
-                      <Upload size={16} />
-                      <span>Upload Favicon Icon</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setFaviconUrl(reader.result);
-                              toast.success('New website icon loaded! Click Save Settings to apply.');
-                            };
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                      />
-                    </label>
-
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        value={faviconUrl}
-                        onChange={e => setFaviconUrl(e.target.value)}
-                        placeholder="e.g. /logo.svg or https://example.com/favicon.png"
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400">
-                    🔍 This icon appears next to your website URL in Google search results, browser tabs, and mobile shortcuts.
-                  </p>
-                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Updates platform title text across header, footer, and emails.</p>
               </div>
 
               {/* Hero Tagline */}
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">
                   Hero Tagline / Subtitle
                 </label>
@@ -548,6 +555,7 @@ export default function AdminSettings() {
                   placeholder="e.g. Premium Home Services at your Doorstep"
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">Displayed on customer homepage hero header.</p>
               </div>
 
               {/* Currency Symbol */}
@@ -1578,6 +1586,27 @@ export default function AdminSettings() {
         )}
 
       </main>
+
+      {/* Floating Save Settings Action Bar */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-6 py-3.5 rounded-full shadow-2xl border border-slate-700/80 flex items-center gap-6 max-w-lg w-[92%] sm:w-auto justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="text-xs">
+            <p className="font-extrabold text-white">Admin Settings Panel</p>
+            <p className="text-[10px] text-slate-400">Click Save to publish changes platform-wide</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSaveSettings}
+          disabled={saving}
+          className="px-5 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-extrabold rounded-full text-xs flex items-center gap-2 shadow-lg transition-all shrink-0 hover:scale-105 active:scale-95"
+        >
+          {saving ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={15} />}
+          {saving ? 'Saving...' : 'Save Settings'}
+        </button>
+      </div>
 
       {/* Video Preview Modal */}
       {previewVideo && (
