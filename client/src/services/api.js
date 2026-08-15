@@ -274,6 +274,17 @@ export const apiService = {
   updateAdminSettings: (data) => api.put('/admin/settings', data),
   getPublicSettings: () => api.get('/services/public-settings'),
 
+  // Branding Assets (S3-backed)
+  getBranding: () => api.get('/admin/settings/branding'),
+  uploadBranding: (type, formData) =>
+    api.post(`/admin/settings/branding/${type}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (e) => {
+        formData._onProgress?.(Math.round((e.loaded * 100) / (e.total || 1)));
+      },
+    }),
+  deleteBranding: (type) => api.delete(`/admin/settings/branding/${type}`),
+
   // Invoice & GST Customization System
   getAdminInvoiceSettings: () => api.get('/admin/invoice-settings'),
   updateAdminInvoiceSettings: (data) => api.put('/admin/invoice-settings', data),

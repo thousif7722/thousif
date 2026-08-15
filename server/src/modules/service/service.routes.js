@@ -95,7 +95,8 @@ router.get('/categories', async (req, res) => {
 
 /**
  * GET /services/public-settings
- * Returns public site settings (siteName, logoUrl, tagline, videoSpotlights)
+ * Returns public site settings (siteName, logoUrl, tagline, videoSpotlights, branding).
+ * Effective logo/favicon URLs prefer S3-backed branding assets over legacy URL fields.
  */
 router.get('/public-settings', async (req, res) => {
   try {
@@ -108,9 +109,40 @@ router.get('/public-settings', async (req, res) => {
         faviconUrl: '/logo.svg',
         tagline: 'Premium Home Services at your Doorstep',
         videoSpotlights: [],
+        branding: {},
       };
     }
-    res.json({ success: true, data: settings });
+
+    // Resolve effective URLs: S3 branding > legacy field > default
+    const b = settings.branding || {};
+    const effectiveLogo    = b.logo?.url    || settings.logoUrl    || '/logo.png';
+    const effectiveFavicon = b.favicon?.url || settings.faviconUrl || '/logo.svg';
+
+    // Add timestamps to branding URLs for cache-busting
+    const cacheBust = (url, asset) => {
+      if (!url || url.startsWith('/')) return url; // local static — no cache-bust needed
+      const ts = asset?.updatedAt ? new Date(asset.updatedAt).getTime() : Date.now();
+      return url.includes('?') ? `${url}&v=${ts}` : `${url}?v=${ts}`;
+    };
+
+    res.json({
+      success: true,
+      data: {
+        ...settings,
+        // Override logo/favicon with effective URLs for backward compat
+        logoUrl:    cacheBust(effectiveLogo,    b.logo),
+        faviconUrl: cacheBust(effectiveFavicon, b.favicon),
+        // Include full resolved branding map for frontend use
+        branding: {
+          logo:        cacheBust(effectiveLogo,     b.logo),
+          favicon:     cacheBust(effectiveFavicon,  b.favicon),
+          darkLogo:    cacheBust(b.darkLogo?.url    || null, b.darkLogo),
+          appIcon:     cacheBust(b.appIcon?.url     || null, b.appIcon),
+          loginLogo:   cacheBust(b.loginLogo?.url   || null, b.loginLogo),
+          invoiceLogo: cacheBust(b.invoiceLogo?.url || null, b.invoiceLogo),
+        },
+      },
+    });
   } catch (err) {
     res.json({
       success: true,
@@ -120,10 +152,12 @@ router.get('/public-settings', async (req, res) => {
         faviconUrl: '/logo.svg',
         tagline: 'Premium Home Services at your Doorstep',
         videoSpotlights: [],
+        branding: {},
       },
     });
   }
 });
+
 
 /**
  * GET /services/options/catalog

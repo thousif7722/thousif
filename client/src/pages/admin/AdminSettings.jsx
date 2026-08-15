@@ -386,11 +386,38 @@ export default function AdminSettings() {
           <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-100 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-2">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Globe className="text-primary-600" size={20} /> Replace Brand Name & Custom UI Logo
+                <Globe className="text-primary-600" size={20} /> Brand Identity Settings
               </h2>
               <span className="text-xs text-primary-700 bg-primary-50 px-3 py-1 rounded-full font-bold">
                 ⚡ Changes apply across Header, Login & Footer
               </span>
+            </div>
+
+            {/* ── NEW: S3-Backed Branding Assets Banner ── */}
+            <div className="bg-gradient-to-r from-primary-900 via-teal-900 to-slate-900 text-white rounded-3xl p-5 border border-teal-700 shadow-md">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0">
+                    <Image size={24} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-base">Branding & Assets Manager</h3>
+                      <span className="text-[10px] font-extrabold uppercase bg-teal-400 text-slate-950 px-2 py-0.5 rounded-full">NEW</span>
+                    </div>
+                    <p className="text-xs text-teal-200 mt-1">
+                      Upload Logo, Favicon, Dark Logo, App Icon, Login Logo & Invoice Logo directly to Amazon S3.
+                      No manual URL entry required.
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href="/admin/settings/branding"
+                  className="px-5 py-3 bg-teal-400 hover:bg-teal-300 text-slate-950 font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 shrink-0 transition-all shadow-lg"
+                >
+                  <Upload size={14} /> Open Branding Manager ⚡
+                </a>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

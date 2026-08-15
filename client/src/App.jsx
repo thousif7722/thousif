@@ -42,6 +42,7 @@ const AdminComplaints  = lazy(() => import('@/pages/admin/AdminComplaints'));
 const AdminAnnouncements = lazy(() => import('@/pages/admin/AdminAnnouncements'));
 const AdminSettings     = lazy(() => import('@/pages/admin/AdminSettings'));
 const AdminInvoiceSettings = lazy(() => import('@/pages/admin/AdminInvoiceSettings'));
+const AdminBranding     = lazy(() => import('@/pages/admin/AdminBranding'));
 const CategoryServicesPage = lazy(() => import('@/pages/customer/CategoryServicesPage'));
 const NotificationsPage  = lazy(() => import('@/pages/shared/NotificationsPage'));
 const PrivacyPolicy = lazy(() => import('@/pages/public/PrivacyPolicy'));
@@ -108,15 +109,18 @@ export default function App() {
       document.title = `${settings.siteName} - ${settings.tagline || 'Home Services'}`;
     }
     if (settings?.faviconUrl) {
+      // Use settings.faviconUrl which is now the effective S3 URL (already cache-busted by backend)
       let link = document.querySelector("link[rel~='icon']");
       if (!link) {
         link = document.createElement('link');
         link.rel = 'icon';
         document.head.appendChild(link);
       }
+      // For local paths don't add version, for S3 URLs the backend already adds ?v=timestamp
       link.href = settings.faviconUrl;
     }
   }, [settings]);
+
 
   useEffect(() => {
     if (user) {
@@ -182,6 +186,7 @@ export default function App() {
         <Route path="/admin/team" element={<ProtectedRoute allowedRoles={['admin']}><AdminTeam /></ProtectedRoute>} />
         <Route path="/admin/announcements" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_announcements"><AdminAnnouncements /></ProtectedRoute>} />
         <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={['admin']}><AdminSettings /></ProtectedRoute>} />
+        <Route path="/admin/settings/branding" element={<ProtectedRoute allowedRoles={['admin']}><AdminBranding /></ProtectedRoute>} />
         <Route path="/admin/invoice-settings" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminInvoiceSettings /></ProtectedRoute>} />
         <Route path="/admin/settings/invoice" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminInvoiceSettings /></ProtectedRoute>} />
 

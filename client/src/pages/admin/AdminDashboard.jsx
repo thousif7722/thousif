@@ -57,6 +57,7 @@ const SIDEBAR_SECTIONS = [
     items: [
       { label: 'Team & Staff Roles', path: '/admin/team', icon: Users, permission: 'admin_only' },
       { label: 'Platform Settings', path: '/admin/settings', icon: Settings, permission: 'admin_only' },
+      { label: 'Branding & Assets', path: '/admin/settings/branding', icon: Globe, permission: 'admin_only' },
     ]
   }
 ];
@@ -660,6 +661,7 @@ export default function AdminDashboard() {
                   { title: 'Staff Roles', icon: Users, path: '/admin/team', color: 'text-cyan-500 dark:text-cyan-400', bg: 'bg-cyan-500/10', perm: 'admin_only' },
                   { title: 'Complaints', icon: AlertTriangle, path: '/admin/complaints', color: 'text-red-500 dark:text-red-400', bg: 'bg-red-500/10', perm: 'manage_complaints' },
                   { title: 'Platform Settings', icon: Settings, path: '/admin/settings', color: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-500/10', perm: 'admin_only' },
+                  { title: 'Branding & Assets', icon: Globe, path: '/admin/settings/branding', color: 'text-teal-500 dark:text-teal-400', bg: 'bg-teal-500/10', perm: 'admin_only' },
                   { title: 'Live Bookings', icon: Briefcase, path: '/admin/bookings', color: 'text-indigo-500 dark:text-indigo-400', bg: 'bg-indigo-500/10', perm: 'manage_bookings' },
                 ].filter(act => {
                   if (user?.role === 'admin') return true;

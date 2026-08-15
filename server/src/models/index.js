@@ -783,11 +783,27 @@ const AttendanceSchema = new mongoose.Schema({
 // ══════════════════════════════════════════════════════════════════════════════
 // SYSTEM SETTINGS MODEL (Bagisto / Shopify Style Dynamic Site Management)
 // ══════════════════════════════════════════════════════════════════════════════
+const BrandingAssetSchema = new mongoose.Schema({
+  url: { type: String, default: null },
+  key: { type: String, default: null },
+  updatedAt: { type: Date, default: null },
+}, { _id: false });
+
 const SystemSettingsSchema = new mongoose.Schema({
   key: { type: String, required: true, unique: true, default: 'global' },
   siteName: { type: String, default: 'ServiceHub' },
-  logoUrl: { type: String, default: '/logo.png' },
-  faviconUrl: { type: String, default: '/logo.svg' },
+  logoUrl: { type: String, default: '/logo.png' },   // legacy — kept for backward compat
+  faviconUrl: { type: String, default: '/logo.svg' }, // legacy — kept for backward compat
+
+  // ── S3 Branding Assets (single source of truth) ──────────────────────────
+  branding: {
+    logo:        { type: BrandingAssetSchema, default: () => ({}) },
+    favicon:     { type: BrandingAssetSchema, default: () => ({}) },
+    darkLogo:    { type: BrandingAssetSchema, default: () => ({}) },
+    appIcon:     { type: BrandingAssetSchema, default: () => ({}) },
+    loginLogo:   { type: BrandingAssetSchema, default: () => ({}) },
+    invoiceLogo: { type: BrandingAssetSchema, default: () => ({}) },
+  },
   tagline: { type: String, default: 'Premium Home Services at your Doorstep' },
   currencySymbol: { type: String, default: '₹' },
   timezone: { type: String, default: 'Asia/Kolkata' },

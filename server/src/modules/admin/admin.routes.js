@@ -1,6 +1,8 @@
 'use strict';
 const express = require('express');
 const mongoose = require('mongoose');
+const multer = require('multer');
+const path = require('path');
 const {
   User, Provider, Booking, Transaction,
   Review, Complaint, Service, WalletLedger, SystemSettings, Notification,
@@ -11,11 +13,56 @@ const { AppError } = require('../../utils/errors');
 const { cache } = require('../../config/redis');
 const { emitToAdmin, getIO } = require('../../socket');
 const logger = require('../../utils/logger');
-const { s3Service } = require('../../services/s3.service');
+const { s3Service, extractKeyFromUrl } = require('../../services/s3.service');
 const invoiceService = require('../../services/invoice.service');
 const pdfService = require('../../services/pdf.service');
 
 const router = express.Router();
+
+// ── Branding Upload Middleware ─────────────────────────────────────────────────
+
+const ALLOWED_MIME_TYPES = [
+  'image/png', 'image/jpeg', 'image/jpg',
+  'image/webp', 'image/svg+xml', 'image/x-icon',
+  'image/vnd.microsoft.icon',
+];
+const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico'];
+
+const BRANDING_SIZE_LIMITS = {
+  logo:        5 * 1024 * 1024, // 5 MB
+  favicon:     2 * 1024 * 1024, // 2 MB
+  darkLogo:    5 * 1024 * 1024,
+  appIcon:     5 * 1024 * 1024,
+  loginLogo:   5 * 1024 * 1024,
+  invoiceLogo: 5 * 1024 * 1024,
+};
+
+const VALID_BRANDING_TYPES = Object.keys(BRANDING_SIZE_LIMITS);
+
+// S3 folder mapping
+const BRANDING_S3_FOLDER = {
+  logo:        'onewayfix/branding/logo',
+  favicon:     'onewayfix/branding/favicon',
+  darkLogo:    'onewayfix/branding/dark-logo',
+  appIcon:     'onewayfix/branding/app-icon',
+  loginLogo:   'onewayfix/branding/login-logo',
+  invoiceLogo: 'onewayfix/branding/invoice-logo',
+};
+
+// Multer memory storage — files never touch disk, streamed directly to S3
+const brandingUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 }, // max-limit guard; per-type enforced in route
+  fileFilter(req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const mimeOk = ALLOWED_MIME_TYPES.includes(file.mimetype);
+    const extOk  = ALLOWED_EXTENSIONS.includes(ext);
+    if (!mimeOk || !extOk) {
+      return cb(new AppError(`Invalid file type. Allowed: PNG, JPG, WEBP, SVG, ICO (got ${file.mimetype})`, 400));
+    }
+    cb(null, true);
+  },
+});
 
 // All admin routes require authentication and admin/staff role
 router.use(authenticate, authorize('admin', 'staff'));
@@ -2285,4 +2332,173 @@ router.get('/invoices', async (req, res) => {
   });
 });
 
+
+// ── Branding Assets Management (S3-backed) ────────────────────────────────────
+
+/**
+ * GET /admin/settings/branding
+ * Returns the current branding assets from the database.
+ * Merges legacy logoUrl/faviconUrl as fallbacks so old URLs keep working.
+ */
+router.get('/settings/branding', authorize('admin'), async (req, res) => {
+  let settings = await SystemSettings.findOne({ key: 'global' }).lean();
+  if (!settings) {
+    settings = { branding: {}, logoUrl: '/logo.png', faviconUrl: '/logo.svg' };
+  }
+  const branding = settings.branding || {};
+
+  // Provide effective URL (S3 URL if present, else legacy fallback)
+  const effective = {
+    logo:        branding.logo?.url        || settings.logoUrl        || null,
+    favicon:     branding.favicon?.url     || settings.faviconUrl     || null,
+    darkLogo:    branding.darkLogo?.url    || null,
+    appIcon:     branding.appIcon?.url     || null,
+    loginLogo:   branding.loginLogo?.url   || null,
+    invoiceLogo: branding.invoiceLogo?.url || null,
+  };
+
+  res.json({
+    success: true,
+    data: {
+      branding: {
+        logo:        branding.logo        || {},
+        favicon:     branding.favicon      || {},
+        darkLogo:    branding.darkLogo     || {},
+        appIcon:     branding.appIcon      || {},
+        loginLogo:   branding.loginLogo    || {},
+        invoiceLogo: branding.invoiceLogo  || {},
+      },
+      effective,
+    },
+  });
+});
+
+/**
+ * POST /admin/settings/branding/:type
+ * Upload or replace a branding image.
+ * Flow:
+ *   1. Validate type and file
+ *   2. Upload NEW file to S3
+ *   3. Save new S3 key/URL to DB
+ *   4. Delete OLD S3 object (only after new upload succeeds)
+ *   5. Update relevant derived fields (logoUrl, faviconUrl) for backward compat
+ */
+router.post('/settings/branding/:type', authorize('admin'), brandingUpload.single('image'), async (req, res) => {
+  const { type } = req.params;
+
+  // Validate asset type
+  if (!VALID_BRANDING_TYPES.includes(type)) {
+    throw new AppError(`Invalid branding type. Must be one of: ${VALID_BRANDING_TYPES.join(', ')}`, 400);
+  }
+
+  // Validate file presence
+  if (!req.file) {
+    throw new AppError('No image file uploaded. Use field name "image"', 400);
+  }
+
+  // Per-type size validation
+  const maxSize = BRANDING_SIZE_LIMITS[type];
+  if (req.file.size > maxSize) {
+    throw new AppError(`File too large. Max size for ${type}: ${Math.round(maxSize / 1024 / 1024)} MB`, 400);
+  }
+
+  // Build unique S3 key: onewayfix/branding/logo/logo-1723719283.png
+  const ext = path.extname(req.file.originalname).toLowerCase() || '.png';
+  const timestamp = Math.floor(Date.now() / 1000);
+  const s3Key = `${BRANDING_S3_FOLDER[type]}/${type}-${timestamp}${ext}`;
+
+  // -- Step 1: Upload new file to S3 --
+  const newUrl = await s3Service.upload(s3Key, req.file.buffer, req.file.mimetype);
+
+  // -- Step 2: Load current settings and record old key for later deletion --
+  let settings = await SystemSettings.findOne({ key: 'global' });
+  if (!settings) settings = new SystemSettings({ key: 'global' });
+
+  const oldKey = settings.branding?.[type]?.key || null;
+
+  // -- Step 3: Save new S3 key/URL to DB --
+  if (!settings.branding) settings.branding = {};
+  settings.branding[type] = { url: newUrl, key: s3Key, updatedAt: new Date() };
+  settings.markModified(`branding.${type}`);
+
+  // Keep legacy fields in sync for backward compatibility
+  if (type === 'logo')    settings.logoUrl    = newUrl;
+  if (type === 'favicon') settings.faviconUrl = newUrl;
+
+  await settings.save();
+
+  // Bust public-settings cache so frontend picks up new branding immediately
+  try { await cache.del('system:settings'); } catch (e) {}
+  try { await cache.del('public:settings'); } catch (e) {}
+
+  // -- Step 4: Delete old S3 object ONLY after new upload + DB save succeeds --
+  if (oldKey && oldKey !== s3Key) {
+    try {
+      await s3Service.delete(oldKey);
+      logger.info(`[Branding] Deleted old ${type} asset from S3: ${oldKey}`);
+    } catch (delErr) {
+      // Non-fatal: old file stays in S3, but new asset is live
+      logger.warn(`[Branding] Failed to delete old ${type} from S3 (${oldKey}): ${delErr.message}`);
+    }
+  }
+
+  logger.info(`[Branding] Admin ${req.userId} uploaded ${type} → ${s3Key}`);
+  res.status(200).json({
+    success: true,
+    message: `${type} uploaded successfully`,
+    data: {
+      type,
+      url: newUrl,
+      key: s3Key,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+});
+
+/**
+ * DELETE /admin/settings/branding/:type
+ * Remove a branding asset from S3 and clear it from the database.
+ */
+router.delete('/settings/branding/:type', authorize('admin'), async (req, res) => {
+  const { type } = req.params;
+
+  if (!VALID_BRANDING_TYPES.includes(type)) {
+    throw new AppError(`Invalid branding type. Must be one of: ${VALID_BRANDING_TYPES.join(', ')}`, 400);
+  }
+
+  const settings = await SystemSettings.findOne({ key: 'global' });
+  if (!settings) throw new AppError('Settings not found', 404);
+
+  const existing = settings.branding?.[type];
+  if (!existing?.url && !existing?.key) {
+    throw new AppError(`No ${type} asset found to delete`, 404);
+  }
+
+  // Delete from S3
+  if (existing.key) {
+    try {
+      await s3Service.delete(existing.key);
+      logger.info(`[Branding] Deleted ${type} from S3: ${existing.key}`);
+    } catch (delErr) {
+      logger.warn(`[Branding] S3 deletion failed for ${type}: ${delErr.message}`);
+    }
+  }
+
+  // Clear from DB
+  settings.branding[type] = { url: null, key: null, updatedAt: new Date() };
+  settings.markModified(`branding.${type}`);
+
+  // Revert legacy fields to defaults
+  if (type === 'logo')    settings.logoUrl    = '/logo.png';
+  if (type === 'favicon') settings.faviconUrl = '/logo.svg';
+
+  await settings.save();
+  try { await cache.del('system:settings'); } catch (e) {}
+  try { await cache.del('public:settings'); } catch (e) {}
+
+  logger.info(`[Branding] Admin ${req.userId} removed ${type} branding asset`);
+  res.json({ success: true, message: `${type} removed successfully` });
+});
+
 module.exports = router;
+

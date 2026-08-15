@@ -28,8 +28,18 @@ const serviceSlice = createSlice({
     settings: {
       siteName: 'OneWayFix',
       logoUrl: '/logo.png',
+      faviconUrl: '/logo.svg',
       tagline: 'Premium Home Services at your Doorstep',
       videoSpotlights: [],
+      // S3-backed branding assets (populated from public-settings)
+      branding: {
+        logo: null,
+        favicon: null,
+        darkLogo: null,
+        appIcon: null,
+        loginLogo: null,
+        invoiceLogo: null,
+      },
     }
   },
   reducers: {
@@ -61,4 +71,6 @@ export const selectCategories = (state) => state.service.categories;
 export const selectServiceLoading = (state) => state.service.loading;
 export const selectSelectedCategory = (state) => state.service.selectedCategory;
 export const selectPublicSettings = (state) => state.service.settings;
+export const selectBranding = (state) => state.service.settings?.branding || {};
 export default serviceSlice.reducer;
+
