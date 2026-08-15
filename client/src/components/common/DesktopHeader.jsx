@@ -87,18 +87,18 @@ export default function DesktopHeader() {
     if (has('manage_providers')) links.push({ to: '/admin/providers', label: 'Providers', icon: Shield });
     if (has('manage_complaints')) links.push({ to: '/admin/complaints', label: 'Complaints', icon: AlertTriangle });
     if (has('manage_financials')) links.push({ to: '/admin/financials', label: 'Financials', icon: DollarSign });
+    if (role === 'admin') links.push({ to: '/admin/settings', label: 'Settings', icon: Settings });
 
-    // Secondary Admin / Staff links placed inside the 'More Tools' dropdown
+    // Secondary Admin / Staff links placed inside the 'More' dropdown
     if (has('manage_financials')) {
-      secondaryAdminLinks.push({ to: '/admin/invoice-settings', label: 'Invoice & GST', icon: FileText });
+      secondaryAdminLinks.push({ to: '/admin/invoice-settings', label: 'Invoice & GST Engine', icon: FileText });
     }
-    if (has('manage_services')) secondaryAdminLinks.push({ to: '/admin/services', label: 'Services', icon: Briefcase });
-    if (has('manage_users')) secondaryAdminLinks.push({ to: '/admin/users', label: 'Users', icon: User });
+    if (has('manage_services')) secondaryAdminLinks.push({ to: '/admin/services', label: 'Services Catalog', icon: Briefcase });
+    if (has('manage_users')) secondaryAdminLinks.push({ to: '/admin/users', label: 'User Directory', icon: User });
     if (role === 'admin') {
-      secondaryAdminLinks.push({ to: '/admin/team', label: 'Team', icon: Briefcase });
-      secondaryAdminLinks.push({ to: '/admin/announcements', label: 'Broadcast', icon: Bell });
-      secondaryAdminLinks.push({ to: '/admin/settings/branding', label: 'Branding & Assets', icon: Settings });
-      secondaryAdminLinks.push({ to: '/admin/settings', label: 'Platform Settings', icon: Settings });
+      secondaryAdminLinks.push({ to: '/admin/team', label: 'Team & Staff', icon: Briefcase });
+      secondaryAdminLinks.push({ to: '/admin/announcements', label: 'Broadcast & Reels', icon: Bell });
+      secondaryAdminLinks.push({ to: '/admin/settings/branding', label: 'S3 Branding Assets', icon: Globe });
     }
   }
 
@@ -258,7 +258,7 @@ export default function DesktopHeader() {
           )}
         </div>
 
-        <nav className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <nav className="flex items-center gap-1.5 relative">
           {links.map(({ to, label, icon: Icon }) => (
             <Link key={to} to={to} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-colors shrink-0 ${location.pathname === to ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
               <Icon size={16} /> {label}
@@ -268,31 +268,32 @@ export default function DesktopHeader() {
           {secondaryAdminLinks.length > 0 && (
             <div className="relative shrink-0" ref={moreToolsRef}>
               <button
+                type="button"
                 onClick={() => setMoreToolsOpen(v => !v)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
                   secondaryAdminLinks.some(l => location.pathname === l.to)
                     ? 'bg-primary-600 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 <span>More</span>
-                <ChevronDown size={14} className={`transition-transform ${moreToolsOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown size={14} className={`transition-transform duration-200 ${moreToolsOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {moreToolsOpen && (
-                <div className="absolute right-0 top-11 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 animate-in fade-in zoom-in-95">
+                <div className="absolute right-0 top-12 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 z-[999] animate-in fade-in slide-in-from-top-2">
                   {secondaryAdminLinks.map(({ to, label, icon: Icon }) => (
                     <Link
                       key={to}
                       to={to}
                       onClick={() => setMoreToolsOpen(false)}
-                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-colors ${
+                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-extrabold transition-colors ${
                         location.pathname === to
                           ? 'bg-slate-900 text-white'
                           : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                       }`}
                     >
-                      <Icon size={15} className={location.pathname === to ? 'text-white' : 'text-primary-600'} />
+                      <Icon size={15} className={location.pathname === to ? 'text-teal-400' : 'text-primary-600'} />
                       <span>{label}</span>
                     </Link>
                   ))}
