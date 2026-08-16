@@ -236,47 +236,62 @@ router.get('/team/workload', authorize('admin'), async (req, res) => {
 });
 
 router.get('/team', authorize('admin'), async (req, res) => {
-  const team = await User.find({ role: 'staff' }).select('-__v').lean();
+  const team = await User.find({
+    role: { $in: ['staff', 'manager', 'team_leader', 'intern', 'admin'] }
+  }).select('-__v -password').sort({ createdAt: -1 }).lean();
   res.json({ success: true, data: team });
 });
 
 /**
  * POST /admin/team
- * Add a new staff member or re-hire a previously resigned employee with the same phone number.
+ * Add a new staff member or update an existing employee by Email (Required) or Phone (Optional).
  */
 router.post('/team', authorize('admin'), async (req, res) => {
-  const { name, phone, email, permissions } = req.body;
-  if (!name || !phone) throw new AppError('Name and phone are required', 400);
+  const { name, email, phone, role, department, designation, permissions } = req.body;
+  if (!name || !name.trim()) throw new AppError('Employee full name is required', 400);
+  if (!email || !email.trim()) throw new AppError('Employee login email is required', 400);
 
-  const cleanEmail = email && typeof email === 'string' && email.trim() !== '' ? email.trim() : undefined;
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanPhone = phone && typeof phone === 'string' && phone.trim() !== '' ? phone.trim() : undefined;
+  const staffRole = role || 'staff';
 
-  let user = await User.findOne({ phone });
+  let user = await User.findOne({
+    $or: [
+      { email: cleanEmail },
+      ...(cleanPhone ? [{ phone: cleanPhone }] : [])
+    ]
+  });
 
   if (user) {
-    user.name = name;
-    if (cleanEmail) user.email = cleanEmail;
-    user.role = 'staff';
-    user.permissions = permissions || [];
+    user.name = name.trim();
+    user.email = cleanEmail;
+    if (cleanPhone) user.phone = cleanPhone;
+    user.role = staffRole;
+    if (department) user.department = department;
+    if (designation) user.designation = designation;
+    if (Array.isArray(permissions)) user.permissions = permissions;
     user.status = 'active';
     user.isBlocked = false;
     user.blockReason = undefined;
     await user.save();
-    logger.info(`Re-hired staff member ${user.name} (${phone})`);
-    return res.json({ success: true, message: `Staff member ${user.name} re-activated and permissions updated!`, data: user });
+    logger.info(`Updated staff member ${user.name} (${cleanEmail})`);
+    return res.json({ success: true, message: `Staff member ${user.name} saved successfully!`, data: user });
   }
 
   const userData = {
-    name,
-    phone,
-    role: 'staff',
-    permissions: permissions || [],
+    name: name.trim(),
+    email: cleanEmail,
+    role: staffRole,
+    permissions: Array.isArray(permissions) ? permissions : [],
+    department: department || 'Operations',
+    designation: designation || 'Staff Associate',
     status: 'active',
   };
-  if (cleanEmail) userData.email = cleanEmail;
+  if (cleanPhone) userData.phone = cleanPhone;
 
   user = await User.create(userData);
 
-  logger.info(`Added new staff member ${user.name} (${phone})`);
+  logger.info(`Added new staff member ${user.name} (${cleanEmail})`);
   res.status(201).json({ success: true, message: `Staff member ${user.name} added successfully!`, data: user });
 });
 
