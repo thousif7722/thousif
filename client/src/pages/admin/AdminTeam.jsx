@@ -191,7 +191,14 @@ export default function AdminTeam() {
       setShowAddModal(false);
       fetchTeamData();
     } catch (err) {
-      toast.error(err.response?.data?.error || err.response?.data?.message || 'Failed to save employee profile');
+      console.error('Submit error:', err);
+      const serverMsg =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        (typeof err.response?.data === 'string' ? err.response.data : null) ||
+        err.message ||
+        'Unable to save employee profile. Please try again.';
+      toast.error(serverMsg);
     } finally {
       setSubmitting(false);
     }
