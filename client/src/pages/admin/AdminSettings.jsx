@@ -94,6 +94,7 @@ export default function AdminSettings() {
   });
 
   const [previewVideo, setPreviewVideo] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchSettings();
@@ -299,8 +300,6 @@ export default function AdminSettings() {
       </div>
     );
   }
-
-  const [searchQuery, setSearchQuery] = useState('');
 
   const TABS = [
     { id: 'branding', label: 'Brand Identity', icon: Globe, desc: 'S3 Logos, Site Name, Tagline & Currency' },
