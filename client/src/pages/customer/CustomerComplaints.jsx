@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { apiService } from '@/services/api';
 import Header from '@/components/common/Header';
 import { EmptyState } from '@/components/common/UI';
 import {
   AlertTriangle, CheckCircle2, Clock, MapPin, ChevronDown,
-  ChevronUp, MessageSquare, X, Siren
+  ChevronUp, MessageSquare, X, Siren, RefreshCw, ShieldCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
+import { getSocket } from '@/services/socket';
 
 // ── Escalation Confirmation Modal ───────────────────────────────────────────────
 function EscalateModal({ complaint, onClose, onEscalated }) {
@@ -267,13 +268,96 @@ function CustomerComplaintCard({ complaint, onRefresh }) {
   );
 }
 
+// ── OTP Display Banner ──────────────────────────────────────────────────────────
+function OtpBanner({ otp, ticketNumber, expiresAt, onDismiss }) {
+  const [timeLeft, setTimeLeft] = useState(Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)));
+
+  useEffect(() => {
+    if (timeLeft <= 0) { onDismiss(); return; }
+    const t = setInterval(() => setTimeLeft(s => {
+      if (s <= 1) { clearInterval(t); onDismiss(); return 0; }
+      return s - 1;
+    }), 1000);
+    return () => clearInterval(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const mins = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+  const secs = String(timeLeft % 60).padStart(2, '0');
+
+  return (
+    <div className="fixed bottom-24 left-0 right-0 z-50 px-4 max-w-lg mx-auto">
+      <div className="bg-slate-900 rounded-2xl shadow-2xl border border-emerald-500/30 p-5 relative">
+        <button onClick={onDismiss} className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-slate-700 text-slate-400">
+          <X size={16} />
+        </button>
+        <div className="flex items-center gap-2 mb-3">
+          <ShieldCheck size={20} className="text-emerald-400 shrink-0" />
+          <div>
+            <p className="font-bold text-white text-sm">Resolution OTP — Ticket #{ticketNumber}</p>
+            <p className="text-xs text-slate-400">Share this code with the technician to confirm resolution</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center gap-3 bg-slate-800 rounded-xl py-4 mb-3">
+          {otp.split('').map((digit, i) => (
+            <div key={i} className="w-12 h-14 bg-slate-700 rounded-xl flex items-center justify-center">
+              <span className="text-3xl font-black text-emerald-400">{digit}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-500">Expires in</span>
+          <span className={`font-mono font-bold ${timeLeft < 60 ? 'text-red-400' : 'text-slate-300'}`}>{mins}:{secs}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────────
 export default function CustomerComplaints() {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('active');
+  // OTP received via socket (shown in overlay banner)
+  const [activeOtp, setActiveOtp] = useState(null); // { otp, ticketNumber, expiresAt }
+  const loadingRef = useRef(false);
 
   useEffect(() => { loadComplaints(); }, []);
+
+  // ── Real-time socket: complaint events ────────────────────────────────────
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const onCreated = (data) => {
+      toast.success(data.message || `Complaint filed! Ticket #${data.ticketNumber}`, { icon: '📋', duration: 6000 });
+      loadComplaints();
+    };
+    const onResolved = () => { loadComplaints(); };
+    const onOtp = (data) => {
+      setActiveOtp({
+        otp: data.otp,
+        ticketNumber: data.ticketNumber,
+        expiresAt: Date.now() + (data.expiresInSeconds || 600) * 1000,
+      });
+    };
+    // Also refresh if any complaint-related push notification arrives
+    const onNotifPush = (data) => {
+      if (data.type === 'complaint' || data.type === 'otp') loadComplaints();
+    };
+
+    socket.on('complaint:created', onCreated);
+    socket.on('complaint:resolved', onResolved);
+    socket.on('complaint:resolution_otp', onOtp);
+    socket.on('notification:push', onNotifPush);
+
+    return () => {
+      socket.off('complaint:created', onCreated);
+      socket.off('complaint:resolved', onResolved);
+      socket.off('complaint:resolution_otp', onOtp);
+      socket.off('notification:push', onNotifPush);
+    };
+  }, []);
 
   async function loadComplaints() {
     setLoading(true);
@@ -299,17 +383,37 @@ export default function CustomerComplaints() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
+
+      {/* OTP overlay banner — shown when provider triggers resolution OTP */}
+      {activeOtp && (
+        <OtpBanner
+          otp={activeOtp.otp}
+          ticketNumber={activeOtp.ticketNumber}
+          expiresAt={activeOtp.expiresAt}
+          onDismiss={() => setActiveOtp(null)}
+        />
+      )}
+
       <div className="max-w-2xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">My Complaints</h1>
             <p className="text-sm text-slate-500 mt-0.5">Track and escalate unresolved service issues</p>
           </div>
-          {escalatedCount > 0 && (
-            <div className="bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-              {escalatedCount} Escalated
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {escalatedCount > 0 && (
+              <div className="bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                {escalatedCount} Escalated
+              </div>
+            )}
+            <button
+              onClick={loadComplaints}
+              disabled={loading}
+              className="flex items-center gap-1 text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
         </div>
 
         {/* Info card */}

@@ -28,9 +28,23 @@ const UserSchema = new mongoose.Schema({
   avatar: String,
   role: { type: String, enum: ['customer', 'provider', 'admin', 'staff', 'manager', 'team_leader', 'intern'], default: 'customer' },
   permissions: [{ type: String }], // Used for 'staff' role
+  employeeId: { type: String, sparse: true, index: true },
+  department: String,
+  departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+  designation: String,
+  branch: String,
+  joiningDate: { type: Date, default: Date.now },
   managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  teamLeaderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+  customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Role' },
   hierarchyLevel: { type: Number, default: 0 },
+  documents: [{
+    name: String,
+    url: String,
+    uploadedAt: { type: Date, default: Date.now },
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  }],
   addresses: [AddressSchema],
   favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Provider' }],
   referralCode: { type: String, unique: true, sparse: true },
@@ -756,27 +770,173 @@ const NotificationSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HR & TEAM HIERARCHY MODELS
+// COMPANY & WORKFORCE HIERARCHY MODELS
 // ══════════════════════════════════════════════════════════════════════════════
-const TeamSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  city: String,
-  department: String,
+
+// 1. Department Schema
+const DepartmentSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  code: { type: String, required: true, uppercase: true },
+  description: String,
   managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  branch: { type: String, default: 'Headquarters' },
+  monthlyTarget: { type: Number, default: 0 },
+  isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
+// 2. Team Schema (Enhanced)
+const TeamSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  code: { type: String, uppercase: true },
+  city: String,
+  department: String,
+  departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+  managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  teamLeaderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  branch: { type: String, default: 'Headquarters' },
+  description: String,
+  monthlyTarget: { type: Number, default: 0 },
+  completedTarget: { type: Number, default: 0 },
+  members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+  transferHistory: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    fromTeam: String,
+    toTeam: String,
+    transferredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    transferredAt: { type: Date, default: Date.now },
+    reason: String,
+  }],
+}, { timestamps: true });
 
+// 3. Custom Role & Permission Schema
+const RoleSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  code: { type: String, required: true, lowercase: true },
+  description: String,
+  permissions: [{ type: String }],
+  isCustom: { type: Boolean, default: true },
+}, { timestamps: true });
 
+// 4. Company Task Schema
+const StaffTaskSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: String,
+  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+  department: String,
+  priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
+  status: { type: String, enum: ['pending', 'assigned', 'in_progress', 'waiting', 'completed', 'cancelled'], default: 'pending', index: true },
+  dueDate: Date,
+  comments: [{
+    author: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    text: String,
+    createdAt: { type: Date, default: Date.now },
+  }],
+  checklist: [{ text: String, done: { type: Boolean, default: false } }],
+}, { timestamps: true });
+
+// 5. Targets & Goals Schema
+const TargetSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  targetType: {
+    type: String,
+    enum: ['revenue', 'bookings', 'complaints_resolved', 'calls_completed', 'ratings', 'tasks', 'leads', 'sales', 'service_completion'],
+    required: true,
+  },
+  period: { type: String, enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'], default: 'monthly' },
+  targetValue: { type: Number, required: true },
+  currentValue: { type: Number, default: 0 },
+  assignedType: { type: String, enum: ['company', 'department', 'team', 'employee'], default: 'team' },
+  assignedTo: { type: mongoose.Schema.Types.ObjectId, refPath: 'assignedModel' },
+  assignedModel: { type: String, enum: ['User', 'Team', 'Department'], default: 'Team' },
+  teamName: String,
+  startDate: { type: Date, required: true },
+  endDate: { type: Date, required: true },
+  priority: { type: String, enum: ['normal', 'high', 'urgent'], default: 'normal' },
+  status: { type: String, enum: ['active', 'completed', 'failed'], default: 'active' },
+}, { timestamps: true });
+
+// 6. Company Announcements Schema
+const CompanyAnnouncementSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  priority: { type: String, enum: ['normal', 'high', 'urgent'], default: 'normal' },
+  audience: { type: String, enum: ['all', 'department', 'team', 'managers'], default: 'all' },
+  targetId: mongoose.Schema.Types.ObjectId,
+  authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  isPinned: { type: Boolean, default: false },
+  expiryDate: Date,
+  attachments: [String],
+}, { timestamps: true });
+
+// 7. Internal Meetings Schema
+const CompanyMeetingSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  date: { type: String, required: true }, // YYYY-MM-DD
+  time: { type: String, required: true }, // HH:mm
+  location: { type: String, default: 'Conference Room / Online' },
+  meetingLink: String,
+  organizerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  agenda: String,
+  notes: String,
+  status: { type: String, enum: ['scheduled', 'ongoing', 'completed', 'cancelled'], default: 'scheduled' },
+}, { timestamps: true });
+
+// 8. Company Internal Chat Message Schema
+const StaffChatMessageSchema = new mongoose.Schema({
+  senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  receiverId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  chatType: { type: String, enum: ['direct', 'team', 'department', 'manager', 'announcement'], default: 'direct' },
+  targetId: { type: mongoose.Schema.Types.ObjectId, index: true }, // teamId / departmentId / userId
+  message: { type: String, required: true },
+  attachments: [String],
+  isRead: { type: Boolean, default: false },
+}, { timestamps: true });
+
+// 9. Staff Leave & Request Schema
+const StaffRequestSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  type: {
+    type: String,
+    enum: ['leave', 'wfh', 'permission', 'shift_change', 'team_transfer', 'equipment', 'salary_doc'],
+    required: true,
+  },
+  startDate: { type: Date, required: true },
+  endDate: { type: Date, required: true },
+  reason: { type: String, required: true },
+  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+  approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejectionReason: String,
+}, { timestamps: true });
+
+// 10. Company Global Settings Schema
+const CompanyConfigSchema = new mongoose.Schema({
+  key: { type: String, default: 'global', unique: true },
+  companyName: { type: String, default: 'ONEWAYFIX' },
+  logoUrl: { type: String, default: '/logo.png' },
+  description: { type: String, default: 'Leading On-Demand Home Services & Workforce Organization' },
+  workingHours: { type: String, default: '09:00 AM - 06:00 PM' },
+  workingDays: [{ type: String }],
+  holidays: [{ date: String, name: String }],
+  branches: [{ name: String, city: String, address: String }],
+  designations: [{ type: String }],
+  policies: [{ title: String, content: String }],
+}, { timestamps: true });
+
+// 11. Attendance Schema
 const AttendanceSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, required: true },
-  userModel: { type: String, enum: ['User', 'Provider'], required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+  userModel: { type: String, enum: ['User', 'Provider'], default: 'User' },
   date: { type: String, required: true }, // YYYY-MM-DD
   checkIn: Date,
   checkOut: Date,
-  status: { type: String, enum: ['present', 'absent', 'leave'], default: 'present' },
+  status: { type: String, enum: ['present', 'absent', 'late', 'half_day', 'leave', 'wfh'], default: 'present' },
   location: {
     type: { type: String, enum: ['Point'], default: 'Point' },
-    coordinates: [Number], // [lng, lat]
+    coordinates: [Number],
   },
 }, { timestamps: true });
 
@@ -1122,7 +1282,16 @@ module.exports = {
   WalletLedger: mongoose.model('WalletLedger', WalletLedgerSchema),
   Coupon: mongoose.model('Coupon', CouponSchema),
   Notification: mongoose.model('Notification', NotificationSchema),
+  Department: mongoose.model('Department', DepartmentSchema),
   Team: mongoose.model('Team', TeamSchema),
+  Role: mongoose.model('Role', RoleSchema),
+  StaffTask: mongoose.model('StaffTask', StaffTaskSchema),
+  Target: mongoose.model('Target', TargetSchema),
+  CompanyAnnouncement: mongoose.model('CompanyAnnouncement', CompanyAnnouncementSchema),
+  CompanyMeeting: mongoose.model('CompanyMeeting', CompanyMeetingSchema),
+  StaffChatMessage: mongoose.model('StaffChatMessage', StaffChatMessageSchema),
+  StaffRequest: mongoose.model('StaffRequest', StaffRequestSchema),
+  CompanyConfig: mongoose.model('CompanyConfig', CompanyConfigSchema),
   Attendance: mongoose.model('Attendance', AttendanceSchema),
   SystemSettings: mongoose.model('SystemSettings', SystemSettingsSchema),
   InvoiceSettings: mongoose.model('InvoiceSettings', InvoiceSettingsSchema),

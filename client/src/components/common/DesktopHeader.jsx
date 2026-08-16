@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import {
   Bell, LogOut, User, Home, BookOpen,
   Briefcase, DollarSign, Settings, Shield, BarChart2, AlertTriangle,
-  MapPin, ChevronDown, Navigation, Check, Search, Menu, FileText
+  MapPin, ChevronDown, Navigation, Check, Search, Menu, FileText, Globe
 } from 'lucide-react';
 
 import { logout, selectUser } from '@/store/slices/authSlice';

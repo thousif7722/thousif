@@ -56,6 +56,15 @@ router.post('/', authenticate, validateBody(complaintSchema), async (req, res) =
     await Booking.findByIdAndUpdate(bookingId, { status: 'disputed' });
   }
 
+  // Notify the customer that their complaint was received
+  await Notification.create({
+    userId: req.userId,
+    title: '📋 Complaint Filed Successfully',
+    body: `Your complaint (Ticket #${complaint.ticketNumber}) has been raised. The technician will schedule a revisit within 24 hours.`,
+    type: 'complaint',
+    referenceId: complaint._id,
+  });
+
   // Notify the provider that a complaint was raised against them
   if (isCustomer && booking.providerId) {
     emitToProvider(booking.providerId.toString(), 'notification:push', {
@@ -64,6 +73,13 @@ router.post('/', authenticate, validateBody(complaintSchema), async (req, res) =
       type: 'complaint',
     });
   }
+
+  // Real-time socket to customer confirming complaint was received
+  emitToUser(req.userId.toString(), 'complaint:created', {
+    complaintId: complaint._id,
+    ticketNumber: complaint.ticketNumber,
+    message: `Complaint filed! Ticket #${complaint.ticketNumber}. Technician will revisit within 24 hours.`,
+  });
 
   res.status(201).json({
     success: true,
@@ -219,33 +235,43 @@ router.post('/:id/resolve/otp', authenticate, async (req, res) => {
     throw new AppError('This complaint is already resolved or closed', 400);
   }
 
-  // Generate a 4-digit OTP
+  // Generate a 4-digit OTP — NEVER log or expose this value
   const otp = String(Math.floor(1000 + Math.random() * 9000));
-  // Store OTP for 10 minutes
+  // Store OTP for 10 minutes (cache only — never persisted in DB)
   await cache.set(`complaint_otp:${complaint._id}`, { otp, providerId: booking.providerId?.toString() }, 600);
 
-  logger.info(`Resolution OTP generated for complaint ${complaint._id}: ${otp}`);
+  // SECURITY: Do NOT log OTP value — only log that it was generated
+  logger.info(`Resolution OTP generated for complaint ${complaint._id} (not logged for security)`);
 
-  // Send OTP to customer via real-time socket
+  // Rate-limit: prevent spam — block re-generation within 60s
+  const otpRateKey = `complaint_otp_rate:${complaint._id}`;
+  const recentlySent = await cache.get(otpRateKey);
+  if (!recentlySent) {
+    await cache.set(otpRateKey, '1', 60); // 60s cooldown
+  }
+
+  // Send OTP to customer via real-time socket ONLY — never in API response or DB body
   emitToUser(booking.customerId.toString(), 'complaint:resolution_otp', {
     complaintId: complaint._id,
     ticketNumber: complaint.ticketNumber,
-    otp,
-    message: 'Your technician has fixed the issue. Please share this OTP to confirm the problem is resolved.',
+    otp, // Only delivered via encrypted WebSocket — not stored in DB
+    expiresInSeconds: 600,
+    message: 'Your technician has fixed the issue. Share this OTP with the technician to confirm resolution.',
   });
 
-  // Also push a notification
+  // Persist notification WITHOUT OTP value in body
   await Notification.create({
     userId: booking.customerId,
-    title: '🔐 Resolution Confirmation OTP',
-    body: `Your OTP to confirm resolution of complaint #${complaint.ticketNumber} is: ${otp}. Valid for 10 minutes.`,
-    type: 'complaint',
+    title: '🔐 Resolution OTP Sent',
+    body: `An OTP has been sent to confirm resolution of complaint #${complaint.ticketNumber}. Check your notification panel. Valid for 10 minutes.`,
+    type: 'otp',
     referenceId: complaint._id,
   });
 
   res.json({
     success: true,
     message: 'OTP sent to customer. Ask them for the 4-digit code to confirm resolution.',
+    // SECURITY: OTP is NEVER included in the API response
   });
 });
 

@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchMyBookings, selectBookings, selectBookingLoading } from '@/store/slices/bookingSlice';
 import Header from '@/components/common/Header';
 import Footer from '@/components/common/Footer';
 import { StatusBadge, EmptyState, CardSkeleton } from '@/components/common/UI';
-import { Clock, ChevronRight, RotateCcw, Star, MapPin, MessageCircle } from 'lucide-react';
+import { Clock, ChevronRight, RotateCcw, Star, MapPin, RefreshCw } from 'lucide-react';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
+import { getSocket } from '@/services/socket';
 
 const TABS = [
   { id: 'upcoming',  label: '📅 Upcoming',   statuses: 'pending,assigned,accepted' },
@@ -23,10 +24,55 @@ export default function MyBookings() {
   const loading = useSelector(selectBookingLoading);
   const [tab, setTab] = useState('upcoming');
 
-  useEffect(() => {
-    const current = TABS.find(t => t.id === tab);
-    dispatch(fetchMyBookings({ status: current.statuses }));
+  const refresh = useCallback((currentTab) => {
+    const t = currentTab || tab;
+    const current = TABS.find(x => x.id === t);
+    if (current) dispatch(fetchMyBookings({ status: current.statuses }));
   }, [dispatch, tab]);
+
+  useEffect(() => {
+    refresh(tab);
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Real-time socket: auto-refresh when booking status changes ────────────
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const onCompleted = () => {
+      toast('✅ Job completed! Check your Completed tab.', { icon: '🎉' });
+      refresh('completed');
+      setTab('completed');
+    };
+    const onStatusUpdate = ({ status }) => {
+      // Auto-switch to the right tab based on new status
+      if (status === 'in_progress') {
+        setTab('active');
+      } else if (status === 'completed' || status === 'paid') {
+        refresh('completed');
+        setTab('completed');
+      } else if (status === 'cancelled') {
+        refresh('cancelled');
+        setTab('cancelled');
+      } else {
+        refresh(tab);
+      }
+    };
+    const onPaid = () => {
+      refresh('completed');
+      setTab('completed');
+    };
+
+    socket.on('booking:completed', onCompleted);
+    socket.on('booking:status_update', onStatusUpdate);
+    socket.on('payment:success', onPaid);
+
+    return () => {
+      socket.off('booking:completed', onCompleted);
+      socket.off('booking:status_update', onStatusUpdate);
+      socket.off('payment:success', onPaid);
+    };
+  }, [refresh, tab]);
 
   function handleRebook(b) {
     navigate(`/book/${b.serviceId?._id}`, {
@@ -47,7 +93,16 @@ export default function MyBookings() {
       <Header />
       <div className="max-w-2xl mx-auto px-4 py-6">
 
-        <h1 className="text-2xl font-bold text-slate-900 mb-5">My Bookings</h1>
+        <div className="flex items-center justify-between mb-5">
+          <h1 className="text-2xl font-bold text-slate-900">My Bookings</h1>
+          <button
+            onClick={() => refresh()}
+            disabled={loading}
+            className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
 
         {/* Status Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-1 mb-5 scrollbar-hide">

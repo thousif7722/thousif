@@ -6,7 +6,7 @@ import { StatusBadge, EmptyState } from '@/components/common/UI';
 import {
   CheckCircle, XCircle, MapPin, Clock, DollarSign,
   Wrench, CheckCircle2, X, ChevronRight, AlertCircle,
-  Banknote, CreditCard, Hourglass, IndianRupee, Navigation, Map, PhoneCall
+  Banknote, CreditCard, Hourglass, IndianRupee, Navigation, Map, PhoneCall, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -467,14 +467,28 @@ export default function ProviderBookings() {
         [bookingId]: { isPaid: true, paymentMethod: paymentMethod || 'online', loading: false, confirming: false },
       }));
       toast.success('💰 Payment received from customer!');
+      // Refresh history tab to reflect paid status
+      if (filter === 'history') loadBookings();
+    });
+    // Booking status updates from customer actions (e.g. job started, completed)
+    socket.on('booking:status_update', ({ status }) => {
+      if (status === 'accepted' || status === 'in_progress') {
+        setFilter('active');
+      }
+    });
+    socket.on('booking:accepted', () => {
+      setFilter('active');
+      loadBookings();
     });
 
     return () => {
       socket.off('booking:new_request');
       socket.off('booking:expired');
       socket.off('payment:received');
+      socket.off('booking:status_update');
+      socket.off('booking:accepted');
     };
-  }, []);
+  }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Countdown for pending request
   useEffect(() => {
@@ -558,7 +572,16 @@ export default function ProviderBookings() {
     <div className="min-h-screen bg-slate-50 pb-20">
       <Header />
       <div className="max-w-2xl mx-auto px-4 py-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-5">My Jobs</h1>
+        <div className="flex items-center justify-between mb-5">
+          <h1 className="text-2xl font-bold text-slate-900">My Jobs</h1>
+          <button
+            onClick={loadBookings}
+            disabled={loading}
+            className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
 
         {/* Pending booking request notification */}
         {pendingRequest && (
@@ -847,7 +870,10 @@ export default function ProviderBookings() {
         <CompleteJobModal
           booking={completeTarget}
           onClose={() => setCompleteTarget(null)}
-          onCompleted={loadBookings}
+          onCompleted={() => {
+            setCompleteTarget(null);
+            setFilter('history'); // Auto-switch to History tab — job will now appear there
+          }}
         />
       )}
 

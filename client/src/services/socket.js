@@ -22,6 +22,43 @@ const SOCKET_URL = getSocketUrl();
 let socket = null;
 let locationInterval = null;
 
+// ── Deduplication: track notification IDs we've already toasted ────────────────
+const _toastedNotifIds = new Set();
+
+/**
+ * Show a toast for a real-time notification exactly once per ID.
+ * Falls back to showing regardless if no ID is present (one-off toasts).
+ */
+function toastNotification(data) {
+  const id = data._id || data.notifId || null;
+  if (id && _toastedNotifIds.has(id)) return; // already shown
+  if (id) _toastedNotifIds.add(id);
+
+  const toastId = id ? `notif_${id}` : undefined;
+  toast(data.title || data.body || 'New notification', {
+    id: toastId,
+    icon: getNotifIcon(data.type),
+    duration: 5000,
+    style: {
+      borderRadius: '12px',
+      background: '#1e293b',
+      color: '#f1f5f9',
+      fontSize: '14px',
+      maxWidth: '380px',
+    },
+  });
+}
+
+function getNotifIcon(type) {
+  switch (type) {
+    case 'complaint': return '📋';
+    case 'otp':       return '🔐';
+    case 'payment':   return '💰';
+    case 'booking_update': return '📦';
+    default:          return '🔔';
+  }
+}
+
 export function connectSocket() {
   const token = localStorage.getItem('accessToken');
   if (!token || socket?.connected) return;
@@ -42,10 +79,7 @@ export function connectSocket() {
 
   socket.on('disconnect', (reason) => {
     console.log('[Socket] Disconnected:', reason);
-    // NOTE: socket.io handles reconnection automatically via reconnectionAttempts config.
-    // Do NOT call socket.connect() here — it causes an infinite reconnect loop.
-    // The 'io server disconnect' reason is intentional (e.g. auth failure) and
-    // should NOT trigger auto-reconnect. Other reasons are auto-handled by socket.io.
+    // socket.io handles reconnection automatically via reconnectionAttempts config.
   });
 
   socket.on('connect_error', (err) => {
@@ -55,28 +89,31 @@ export function connectSocket() {
   // ── Booking events ─────────────────────────────────────────────────────────
   socket.on('booking:assigned', (data) => {
     store.dispatch(updateBookingStatus({ bookingId: data.bookingId, status: 'assigned' }));
-    toast.success(data.message || 'Provider found!', { icon: '👷', duration: 5000 });
+    toast.success(data.message || 'Provider found!', { id: `booking_assigned_${data.bookingId}`, icon: '👷', duration: 5000 });
     showNotificationBanner(data.message);
   });
 
   socket.on('booking:accepted', (data) => {
     store.dispatch(updateBookingStatus({ bookingId: data.bookingId, status: 'accepted' }));
-    toast.success(data.message || 'Provider accepted your booking!', { icon: '✅' });
+    toast.success(data.message || 'Provider accepted your booking!', { id: `booking_accepted_${data.bookingId}`, icon: '✅', duration: 5000 });
   });
 
   socket.on('booking:status_update', (data) => {
     store.dispatch(updateBookingStatus({ bookingId: data.bookingId, status: data.status, endOtp: data.endOtp }));
-    if (data.message) toast(data.message);
+    if (data.message) toast(data.message, { id: `status_update_${data.bookingId}_${data.status}`, duration: 5000 });
   });
 
   socket.on('booking:completed', (data) => {
     store.dispatch(updateBookingStatus({ bookingId: data.bookingId, status: 'completed' }));
-    toast.success(data.message || 'Service completed! Proceed to payment.', { duration: 8000 });
+    toast.success(data.message || 'Service completed! Proceed to payment.', {
+      id: `booking_completed_${data.bookingId}`,
+      duration: 8000,
+    });
   });
 
   socket.on('booking:paid', (data) => {
     store.dispatch(updateBookingStatus({ bookingId: data.bookingId, status: 'paid' }));
-    toast.success(data.message || 'Payment successful!', { icon: '🎉' });
+    toast.success(data.message || 'Payment successful!', { id: `booking_paid_${data.bookingId}`, icon: '🎉', duration: 6000 });
   });
 
   socket.on('booking:no_providers', (data) => {
@@ -85,19 +122,20 @@ export function connectSocket() {
 
   // ── Provider-specific events ───────────────────────────────────────────────
   socket.on('booking:new_request', (data) => {
-    store.dispatch(addNotification({
+    const notif = {
+      _clientId: `new_request_${data.bookingId}`,
       title: 'New Booking Request!',
       body: `${data.service?.name || 'Service'} at ${data.address?.area} — ₹${data.estimatedEarnings?.toFixed(0)}`,
       type: 'booking_update',
       isRead: false,
       createdAt: new Date().toISOString(),
-    }));
-    // Play alert sound
+    };
+    store.dispatch(addNotification(notif));
     playNotificationSound();
     toast(`New booking request! You have ${data.acceptTimeoutSeconds}s to accept.`, {
       id: 'booking_new_request_toast',
       icon: '🔔',
-      duration: 4000,
+      duration: 6000,
     });
   });
 
@@ -108,12 +146,74 @@ export function connectSocket() {
   });
 
   socket.on('payment:received', (data) => {
-    toast.success(data.message || `Payment received: ₹${data.earnings}`, { icon: '💰' });
+    toast.success(data.message || `Payment received: ₹${data.earnings}`, { id: `payment_recv_${data.bookingId}`, icon: '💰', duration: 6000 });
   });
 
-  // ── Real-time notifications ────────────────────────────────────────────────
+  // ── Real-time push notifications (from backend complaint/booking events) ───
+  // IMPORTANT: Always show a toast + deduplicate by notif ID to prevent duplicate toasts.
   socket.on('notification:push', (data) => {
-    store.dispatch(addNotification({ ...data, isRead: false, createdAt: new Date().toISOString() }));
+    // Generate a stable client-side ID for deduplication if no _id provided
+    const clientId = data._id || `push_${data.type}_${data.title}_${Date.now()}`;
+    const notif = {
+      ...data,
+      _clientId: clientId,
+      isRead: false,
+      createdAt: data.createdAt || new Date().toISOString(),
+    };
+    store.dispatch(addNotification(notif));
+    toastNotification(notif);
+  });
+
+  // ── Complaint-specific events ──────────────────────────────────────────────
+  // OTP received by customer (emitted ONLY via socket, never in API response)
+  socket.on('complaint:resolution_otp', (data) => {
+    // Dispatch a special in-memory notification that includes the OTP for the UI
+    // This is NEVER persisted in DB \u2014 it lives only in React state during the session
+    store.dispatch(addNotification({
+      _clientId: `otp_${data.complaintId}_${Date.now()}`,
+      title: '\ud83d\udd10 Resolution OTP',
+      body: `Ticket #${data.ticketNumber}: Your OTP is ready. Share it with the technician to confirm the issue is resolved.`,
+      type: 'otp',
+      isRead: false,
+      // Store OTP in the notification payload for UI display
+      _otp: data.otp,
+      _complaintId: data.complaintId,
+      _ticketNumber: data.ticketNumber,
+      _expiresInSeconds: data.expiresInSeconds || 600,
+      createdAt: new Date().toISOString(),
+    }));
+
+    toast(`🔐 Resolution OTP: ${data.otp} (Ticket #${data.ticketNumber}) — Share with technician`, {
+      id: `otp_toast_${data.complaintId}`,
+      icon: '🔐',
+      duration: 60000,
+      style: {
+        borderRadius: '16px',
+        background: '#0f172a',
+        color: '#34d399',
+        fontWeight: 'bold',
+        fontSize: '15px',
+        padding: '16px 20px',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+      },
+    });
+  });
+
+  // Customer's complaint was successfully created
+  socket.on('complaint:created', (data) => {
+    toast.success(data.message || `Complaint filed. Ticket #${data.ticketNumber}`, {
+      id: `complaint_created_${data.complaintId}`,
+      icon: '📋',
+      duration: 6000,
+    });
+  });
+
+  // Complaint was resolved (provider confirmed with OTP)
+  socket.on('complaint:resolved', (data) => {
+    toast.success(`Complaint #${data.ticketNumber} resolved! \u2705`, {
+      id: `complaint_resolved_${data.complaintId}`,
+      duration: 8000,
+    });
   });
 
   return socket;

@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import {
   Image, Trash2, Upload, RefreshCw, Shield, Smartphone,
   FileText, Monitor, Star, AlertCircle, CheckCircle2, X,
-  CloudUpload, Eye, Loader2, Info,
+  UploadCloud, Eye, Loader2, Info,
 } from 'lucide-react';
 
 // ─── Asset Configuration ───────────────────────────────────────────────────────
@@ -260,7 +260,7 @@ function BrandingCard({ config, asset, onUploaded, onRemoved }) {
           ) : (
             <div className="flex flex-col items-center gap-2 py-6 px-4 text-center pointer-events-none">
               <div className={`w-12 h-12 rounded-2xl ${bg} flex items-center justify-center`}>
-                <CloudUpload size={22} className={accent} />
+                <UploadCloud size={22} className={accent} />
               </div>
               <div>
                 <p className="text-sm font-bold text-slate-700">Drag & drop or click to browse</p>
