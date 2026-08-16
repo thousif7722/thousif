@@ -224,6 +224,22 @@ router.post('/google-authenticate', validateBody(googleAuthSchema), async (req, 
 
   // Existing user missing phone number
   if (!user.phone) {
+    // Staff and Admin roles hired via email do not require mandatory phone collection
+    if (['staff', 'manager', 'team_leader', 'executive', 'technician', 'admin', 'intern'].includes(user.role)) {
+      const targetId = user._id;
+      const tokens = generateTokens(targetId, user.role);
+      await storeRefreshToken(targetId, tokens.sessionId, tokens.refreshToken);
+
+      return res.json({
+        success: true,
+        isNewUser: false,
+        needsPhone: false,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: formattedUser,
+      });
+    }
+
     return res.json({
       success: true,
       isNewUser: false,

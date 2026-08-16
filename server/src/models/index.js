@@ -773,6 +773,8 @@ const NotificationSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
+NotificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }); // 90 days TTL auto-cleanup
+
 // ══════════════════════════════════════════════════════════════════════════════
 // COMPANY & WORKFORCE HIERARCHY MODELS
 // ══════════════════════════════════════════════════════════════════════════════
