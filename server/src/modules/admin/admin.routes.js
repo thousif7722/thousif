@@ -235,9 +235,9 @@ router.get('/team/workload', authorize('admin'), async (req, res) => {
   });
 });
 
-router.get('/team', authorize('admin'), async (req, res) => {
+router.get('/team', authorize('admin', 'staff', 'manager'), async (req, res) => {
   const team = await User.find({
-    role: { $in: ['staff', 'manager', 'team_leader', 'intern', 'admin'] }
+    role: { $in: ['staff', 'manager', 'team_leader', 'executive', 'technician', 'intern', 'admin'] }
   }).select('-__v -password').sort({ createdAt: -1 }).lean();
   res.json({ success: true, data: team });
 });
@@ -246,7 +246,7 @@ router.get('/team', authorize('admin'), async (req, res) => {
  * POST /admin/team
  * Add a new staff member or update an existing employee by Email (Required) or Phone (Optional).
  */
-router.post('/team', authorize('admin'), async (req, res) => {
+router.post('/team', authorize('admin', 'staff', 'manager'), async (req, res) => {
   const { name, email, phone, role, department, designation, permissions } = req.body;
   if (!name || !name.trim()) throw new AppError('Employee full name is required', 400);
   if (!email || !email.trim()) throw new AppError('Employee login email is required', 400);
@@ -295,15 +295,21 @@ router.post('/team', authorize('admin'), async (req, res) => {
   res.status(201).json({ success: true, message: `Staff member ${user.name} added successfully!`, data: user });
 });
 
-router.put('/team/:id', authorize('admin'), async (req, res) => {
-  const { permissions, isBlocked } = req.body;
+router.put('/team/:id', authorize('admin', 'staff', 'manager'), async (req, res) => {
+  const { name, email, phone, role, department, designation, permissions, isBlocked } = req.body;
   const updates = {};
-  if (permissions) updates.permissions = permissions;
+  if (name) updates.name = name.trim();
+  if (email) updates.email = email.trim().toLowerCase();
+  if (phone !== undefined) updates.phone = phone ? phone.trim() : undefined;
+  if (role) updates.role = role;
+  if (department) updates.department = department;
+  if (designation) updates.designation = designation;
+  if (Array.isArray(permissions)) updates.permissions = permissions;
   if (isBlocked !== undefined) updates.isBlocked = isBlocked;
 
   const staff = await User.findByIdAndUpdate(req.params.id, updates, { new: true });
   if (!staff) throw new AppError('Staff member not found', 404);
-  res.json({ success: true, message: 'Team member updated', data: staff });
+  res.json({ success: true, message: 'Team member updated successfully', data: staff });
 });
 
 /**

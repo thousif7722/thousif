@@ -104,7 +104,7 @@ router.get('/roles', async (req, res) => {
   res.json({ success: true, data: { defaultRoles: DEFAULT_ROLES, customRoles } });
 });
 
-router.post('/roles', authorize('admin'), async (req, res) => {
+router.post('/roles', authorize('admin', 'staff', 'manager'), async (req, res) => {
   const { name, code, description, permissions } = req.body;
   if (!name || !code) throw new AppError('Name and code are required', 400);
 
@@ -131,7 +131,7 @@ router.get('/departments', async (req, res) => {
   res.json({ success: true, data: depts });
 });
 
-router.post('/departments', authorize('admin'), async (req, res) => {
+router.post('/departments', authorize('admin', 'staff', 'manager'), async (req, res) => {
   const { name, code, description, managerId, branch, monthlyTarget } = req.body;
   if (!name || !code) throw new AppError('Name and code are required', 400);
 
@@ -143,7 +143,7 @@ router.post('/departments', authorize('admin'), async (req, res) => {
   res.status(201).json({ success: true, message: 'Department created', data: dept });
 });
 
-router.put('/departments/:id', authorize('admin'), async (req, res) => {
+router.put('/departments/:id', authorize('admin', 'staff', 'manager'), async (req, res) => {
   const updated = await Department.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
   res.json({ success: true, message: 'Department updated', data: updated });
 });

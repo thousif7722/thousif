@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import apiService from '@/services/api';
 import Header from '@/components/common/Header';
 import {
-  Users, Shield, Check, X, Loader, Plus, UserPlus, Search, Filter, Download,
-  Eye, Edit3, Trash2, Phone, Mail, Calendar, Building2, Crown, Briefcase,
-  UserCheck, AlertCircle, CheckCircle2, Clock, ChevronLeft, ChevronRight, Lock
+  Users, Shield, Check, X, Loader, Plus, Search, Filter, Download,
+  Eye, Edit3, Trash2, Phone, Mail, Building2, Crown, Briefcase,
+  CheckCircle2, ChevronLeft, ChevronRight, Layers, FileText
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -18,22 +18,23 @@ const PERMISSION_OPTS = [
   { id: 'manage_users', label: 'User Operations', desc: 'Block/unblock users & subscriptions' },
 ];
 
-const DEPARTMENT_OPTS = [
-  { name: 'Operations', icon: Building2, color: 'text-blue-600 bg-blue-50' },
-  { name: 'Customer Support', icon: Phone, color: 'text-emerald-600 bg-emerald-50' },
-  { name: 'Technical', icon: Briefcase, color: 'text-amber-600 bg-amber-50' },
-  { name: 'Finance', icon: Shield, color: 'text-purple-600 bg-purple-50' },
-  { name: 'Marketing', icon: Users, color: 'text-rose-600 bg-rose-50' },
-  { name: 'HR', icon: Crown, color: 'text-indigo-600 bg-indigo-50' },
+const DEFAULT_DEPARTMENTS = [
+  { name: 'Operations', code: 'OPS', icon: Building2, color: 'text-blue-600 bg-blue-50' },
+  { name: 'Customer Support', code: 'CS', icon: Phone, color: 'text-emerald-600 bg-emerald-50' },
+  { name: 'Technical', code: 'TECH', icon: Briefcase, color: 'text-amber-600 bg-amber-50' },
+  { name: 'Finance', code: 'FIN', icon: Shield, color: 'text-purple-600 bg-purple-50' },
+  { name: 'Marketing', code: 'MKT', icon: Users, color: 'text-rose-600 bg-rose-50' },
+  { name: 'HR', code: 'HR', icon: Crown, color: 'text-indigo-600 bg-indigo-50' },
 ];
 
-const ROLE_BADGES = {
+const DEFAULT_ROLES_MAP = {
   manager: { label: 'Manager', bg: 'bg-purple-100 text-purple-700 border-purple-200' },
   team_leader: { label: 'Team Leader', bg: 'bg-blue-100 text-blue-700 border-blue-200' },
   technician: { label: 'Technician', bg: 'bg-amber-100 text-amber-700 border-amber-200' },
   executive: { label: 'Executive', bg: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
   staff: { label: 'Staff', bg: 'bg-slate-100 text-slate-700 border-slate-200' },
   admin: { label: 'Super Admin', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  intern: { label: 'Intern', bg: 'bg-rose-100 text-rose-700 border-rose-200' },
 };
 
 export default function AdminTeam() {
@@ -41,6 +42,8 @@ export default function AdminTeam() {
   const [loading, setLoading] = useState(true);
   const [team, setTeam] = useState([]);
   const [workload, setWorkload] = useState(null);
+  const [rolesList, setRolesList] = useState([]);
+  const [departmentsList, setDepartmentsList] = useState(DEFAULT_DEPARTMENTS);
 
   // Filters & Pagination State
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,6 +55,9 @@ export default function AdminTeam() {
 
   // Modals & Drawer State
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddRoleModal, setShowAddRoleModal] = useState(false);
+  const [showAddDeptModal, setShowAddDeptModal] = useState(false);
+
   const [editingMember, setEditingMember] = useState(null);
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -67,6 +73,22 @@ export default function AdminTeam() {
     permissions: [],
   });
 
+  // Role Form State
+  const [roleForm, setRoleForm] = useState({
+    name: '',
+    code: '',
+    description: '',
+    permissions: ['manage_providers'],
+  });
+
+  // Department Form State
+  const [deptForm, setDeptForm] = useState({
+    name: '',
+    code: '',
+    description: '',
+    monthlyTarget: 100,
+  });
+
   useEffect(() => {
     fetchTeamData();
   }, []);
@@ -74,18 +96,33 @@ export default function AdminTeam() {
   async function fetchTeamData() {
     try {
       setLoading(true);
-      const [teamRes, workloadRes] = await Promise.all([
-        apiService.getAdminTeam().catch(() => ({ data: { data: [] } })),
-        apiService.getTeamWorkload().catch(() => ({ data: { data: null } })),
+      const [teamRes, workloadRes, rolesRes, deptsRes] = await Promise.allSettled([
+        apiService.getAdminTeam(),
+        apiService.getTeamWorkload(),
+        apiService.getCompanyRoles(),
+        apiService.getCompanyDepartments(),
       ]);
 
-      const staffList = teamRes.data?.data || [];
-      setTeam(staffList);
-      if (workloadRes?.data?.data) {
-        setWorkload(workloadRes.data.data);
+      if (teamRes.status === 'fulfilled' && teamRes.value?.data?.data) {
+        setTeam(teamRes.value.data.data || []);
+      }
+
+      if (workloadRes.status === 'fulfilled' && workloadRes.value?.data?.data) {
+        setWorkload(workloadRes.value.data.data);
+      }
+
+      if (rolesRes.status === 'fulfilled' && rolesRes.value?.data?.data) {
+        const { defaultRoles = [], customRoles = [] } = rolesRes.value.data.data;
+        setRolesList([...defaultRoles, ...customRoles]);
+      }
+
+      if (deptsRes.status === 'fulfilled' && deptsRes.value?.data?.data && Array.isArray(deptsRes.value.data.data)) {
+        if (deptsRes.value.data.data.length > 0) {
+          setDepartmentsList(deptsRes.value.data.data);
+        }
       }
     } catch (err) {
-      toast.error('Failed to load team data');
+      toast.error('Failed to refresh workforce data');
     } finally {
       setLoading(false);
     }
@@ -128,16 +165,25 @@ export default function AdminTeam() {
     }));
   }
 
+  function handleToggleRolePerm(permId) {
+    setRoleForm(prev => ({
+      ...prev,
+      permissions: prev.permissions.includes(permId)
+        ? prev.permissions.filter(p => p !== permId)
+        : [...prev.permissions, permId]
+    }));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!formData.name.trim()) return toast.error('Employee full name is required');
-    if (!formData.email.trim()) return toast.error('Employee login email is required');
+    if (!formData.name || !formData.name.trim()) return toast.error('Employee full name is required');
+    if (!formData.email || !formData.email.trim()) return toast.error('Employee login email is required');
 
     setSubmitting(true);
     try {
       if (editingMember) {
-        await apiService.updateTeamMember(editingMember._id, formData);
-        toast.success(`Updated ${formData.name}'s profile & permissions`);
+        const res = await apiService.updateTeamMember(editingMember._id, formData);
+        toast.success(res.data?.message || `Updated ${formData.name}'s profile`);
       } else {
         const res = await apiService.createTeamMember(formData);
         toast.success(res.data?.message || 'Employee hired successfully!');
@@ -145,33 +191,45 @@ export default function AdminTeam() {
       setShowAddModal(false);
       fetchTeamData();
     } catch (err) {
-      toast.error(err.response?.data?.error || err.response?.data?.message || 'Action failed');
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Failed to save employee profile');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleToggleBlock(member) {
-    const actionText = member.isBlocked ? 'unblock' : 'block';
-    if (!window.confirm(`Are you sure you want to ${actionText} ${member.name}?`)) return;
+  async function handleCreateRole(e) {
+    e.preventDefault();
+    if (!roleForm.name.trim() || !roleForm.code.trim()) return toast.error('Role name and code are required');
 
+    setSubmitting(true);
     try {
-      await apiService.updateTeamMember(member._id, { isBlocked: !member.isBlocked });
-      toast.success(`Employee ${member.name} ${member.isBlocked ? 'unblocked' : 'blocked'}`);
+      const res = await apiService.createCompanyRole(roleForm);
+      toast.success(res.data?.message || 'Custom role created successfully');
+      setShowAddRoleModal(false);
+      setRoleForm({ name: '', code: '', description: '', permissions: ['manage_providers'] });
       fetchTeamData();
     } catch (err) {
-      toast.error('Failed to update status');
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Failed to create custom role');
+    } finally {
+      setSubmitting(false);
     }
   }
 
-  async function handleResign(member) {
-    if (!window.confirm(`Mark ${member.name} as RESIGNED? This revokes access and auto-redistributes their tasks.`)) return;
+  async function handleCreateDept(e) {
+    e.preventDefault();
+    if (!deptForm.name.trim() || !deptForm.code.trim()) return toast.error('Department name and code are required');
+
+    setSubmitting(true);
     try {
-      const res = await apiService.markStaffResigned(member._id);
-      toast.success(res.data?.message || 'Employee marked as resigned');
+      const res = await apiService.createCompanyDepartment(deptForm);
+      toast.success(res.data?.message || 'Department created successfully');
+      setShowAddDeptModal(false);
+      setDeptForm({ name: '', code: '', description: '', monthlyTarget: 100 });
       fetchTeamData();
     } catch (err) {
-      toast.error('Failed to process resignation');
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Failed to create department');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -179,10 +237,10 @@ export default function AdminTeam() {
     if (!window.confirm(`Permanently delete employee ${member.name}?`)) return;
     try {
       await apiService.deleteStaffMember(member._id);
-      toast.success('Employee deleted');
+      toast.success('Employee deleted successfully');
       fetchTeamData();
     } catch (err) {
-      toast.error('Delete failed');
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Delete failed');
     }
   }
 
@@ -233,9 +291,9 @@ export default function AdminTeam() {
 
   // Summary KPIs
   const totalEmployeesCount = team.length;
-  const activeTodayCount = team.filter(m => m.isOnline || !m.isBlocked).length;
-  const departmentsCount = new Set(team.map(m => m.department).filter(Boolean)).size || 6;
-  const rolesCount = new Set(team.map(m => m.role).filter(Boolean)).size || 5;
+  const activeTodayCount = team.filter(m => m.isOnline || (!m.isBlocked && m.status !== 'resigned')).length;
+  const departmentsCount = new Set(team.map(m => m.department).filter(Boolean)).size || departmentsList.length || 6;
+  const rolesCount = new Set(team.map(m => m.role).filter(Boolean)).size || 6;
   const onLeaveCount = team.filter(m => m.status === 'on_leave' || m.status === 'resigned').length;
 
   return (
@@ -250,12 +308,30 @@ export default function AdminTeam() {
             <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Team Management</h1>
             <p className="text-sm text-slate-500 mt-1">Manage your team members, roles, departments and permissions.</p>
           </div>
-          <button
-            onClick={handleOpenAdd}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-3 rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-indigo-600/20 transition-all active:scale-95 shrink-0"
-          >
-            <Plus size={18} /> Add New Employee
-          </button>
+          <div className="flex items-center gap-3">
+            {activeSubTab === 'roles' && (
+              <button
+                onClick={() => setShowAddRoleModal(true)}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-3 rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all active:scale-95 shrink-0"
+              >
+                <Plus size={18} /> Add New Role
+              </button>
+            )}
+            {activeSubTab === 'departments' && (
+              <button
+                onClick={() => setShowAddDeptModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-3 rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition-all active:scale-95 shrink-0"
+              >
+                <Plus size={18} /> Add Department
+              </button>
+            )}
+            <button
+              onClick={handleOpenAdd}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-3 rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-indigo-600/20 transition-all active:scale-95 shrink-0"
+            >
+              <Plus size={18} /> Add New Employee
+            </button>
+          </div>
         </div>
 
         {/* 5 Top KPI Cards matching reference design */}
@@ -389,6 +465,7 @@ export default function AdminTeam() {
                   <option value="executive">Executive</option>
                   <option value="staff">Staff</option>
                   <option value="admin">Super Admin</option>
+                  <option value="intern">Intern</option>
                 </select>
 
                 <select
@@ -447,7 +524,7 @@ export default function AdminTeam() {
                         </tr>
                       ) : (
                         paginatedTeam.map(member => {
-                          const badge = ROLE_BADGES[member.role] || ROLE_BADGES.staff;
+                          const badge = DEFAULT_ROLES_MAP[member.role] || { label: member.role || 'Staff', bg: 'bg-slate-100 text-slate-700 border-slate-200' };
                           return (
                             <tr key={member._id} className="hover:bg-slate-50/80 transition-colors">
                               {/* Employee Column */}
@@ -591,43 +668,91 @@ export default function AdminTeam() {
 
         {/* Tab 2: Departments */}
         {activeSubTab === 'departments' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {DEPARTMENT_OPTS.map(dept => {
-              const count = team.filter(m => m.department === dept.name).length;
-              const Icon = dept.icon;
-              return (
-                <div key={dept.name} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                  <div className="flex justify-between items-start">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${dept.color}`}>
-                      <Icon size={24} />
+          <div className="space-y-6">
+            <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div>
+                <h3 className="font-bold text-slate-900 text-lg">Organizational Departments</h3>
+                <p className="text-xs text-slate-500 mt-1">Configure company divisions and monthly target units.</p>
+              </div>
+              <button
+                onClick={() => setShowAddDeptModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-sm"
+              >
+                <Plus size={16} /> Create Department
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {departmentsList.map(dept => {
+                const count = team.filter(m => m.department === dept.name).length;
+                return (
+                  <div key={dept.name || dept._id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex justify-between items-start">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
+                        {dept.code || dept.name?.substring(0, 3).toUpperCase()}
+                      </div>
+                      <span className="bg-slate-100 text-slate-700 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
+                        {count} Members
+                      </span>
                     </div>
-                    <span className="bg-slate-100 text-slate-700 font-mono text-xs px-2.5 py-1 rounded-full font-bold">
-                      {count} Members
-                    </span>
+                    <h3 className="font-bold text-slate-900 text-lg mt-4">{dept.name}</h3>
+                    <p className="text-xs text-slate-500 mt-1">{dept.description || `Core department overseeing ${dept.name.toLowerCase()} tasks.`}</p>
+                    {dept.monthlyTarget && (
+                      <p className="text-[11px] text-slate-400 font-medium mt-3">Target: {dept.monthlyTarget} units/mo</p>
+                    )}
                   </div>
-                  <h3 className="font-bold text-slate-900 text-lg mt-4">{dept.name}</h3>
-                  <p className="text-xs text-slate-500 mt-1">Core operational unit managing {dept.name.toLowerCase()} workflows.</p>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
 
         {/* Tab 3: Roles */}
         {activeSubTab === 'roles' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {Object.entries(ROLE_BADGES).map(([key, item]) => {
-              const count = team.filter(m => m.role === key).length;
-              return (
-                <div key={key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold border ${item.bg}`}>
-                    {item.label}
-                  </span>
-                  <h3 className="font-bold text-slate-900 text-base mt-3">{item.label} Role</h3>
-                  <p className="text-xs text-slate-500 mt-1">Assigned to {count} active staff members in system.</p>
-                </div>
-              );
-            })}
+          <div className="space-y-6">
+            <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div>
+                <h3 className="font-bold text-slate-900 text-lg">System & Custom Roles</h3>
+                <p className="text-xs text-slate-500 mt-1">Define granular access levels for your organization.</p>
+              </div>
+              <button
+                onClick={() => setShowAddRoleModal(true)}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-sm"
+              >
+                <Plus size={16} /> Create Custom Role
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {rolesList.length > 0 ? (
+                rolesList.map(r => {
+                  const count = team.filter(m => m.role === r.code).length;
+                  return (
+                    <div key={r.code || r._id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <span className="px-3 py-1 rounded-full text-xs font-bold border bg-purple-50 text-purple-700 border-purple-200">
+                        {r.name}
+                      </span>
+                      <h3 className="font-bold text-slate-900 text-base mt-3">{r.name}</h3>
+                      <p className="text-xs text-slate-500 mt-1">{r.description || `Configured system role with permissions.`}</p>
+                      <p className="text-[11px] text-slate-400 font-semibold mt-3">Assigned Employees: {count}</p>
+                    </div>
+                  );
+                })
+              ) : (
+                Object.entries(DEFAULT_ROLES_MAP).map(([key, item]) => {
+                  const count = team.filter(m => m.role === key).length;
+                  return (
+                    <div key={key} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${item.bg}`}>
+                        {item.label}
+                      </span>
+                      <h3 className="font-bold text-slate-900 text-base mt-3">{item.label} Role</h3>
+                      <p className="text-xs text-slate-500 mt-1">Assigned to {count} active staff members in system.</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
 
@@ -742,6 +867,7 @@ export default function AdminTeam() {
                       <option value="team_leader">Team Leader</option>
                       <option value="manager">Manager</option>
                       <option value="admin">Super Admin</option>
+                      <option value="intern">Intern</option>
                     </select>
                   </div>
 
@@ -812,6 +938,134 @@ export default function AdminTeam() {
                 {submitting ? <Loader className="animate-spin" size={16} /> : editingMember ? 'Save Changes' : 'Hire Employee'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Custom Role Modal */}
+      {showAddRoleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-900">Add Custom Role</h2>
+              <button onClick={() => setShowAddRoleModal(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-xl">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateRole} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Role Name *</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. Regional Supervisor"
+                  value={roleForm.name}
+                  onChange={e => setRoleForm({ ...roleForm, name: e.target.value, code: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Role Code *</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. regional_supervisor"
+                  value={roleForm.code}
+                  onChange={e => setRoleForm({ ...roleForm, code: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-mono focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="Role responsibilities and scope..."
+                  value={roleForm.description}
+                  onChange={e => setRoleForm({ ...roleForm, description: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="pt-2 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddRoleModal(false)}
+                  className="px-4 py-2 rounded-xl font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-5 py-2 rounded-xl flex items-center gap-2"
+                >
+                  {submitting ? <Loader className="animate-spin" size={16} /> : 'Save Role'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Department Modal */}
+      {showAddDeptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-900">Add New Department</h2>
+              <button onClick={() => setShowAddDeptModal(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-xl">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateDept} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Department Name *</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. Quality Assurance"
+                  value={deptForm.name}
+                  onChange={e => setDeptForm({ ...deptForm, name: e.target.value, code: e.target.value.substring(0, 4).toUpperCase() })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Department Code *</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. QA"
+                  value={deptForm.code}
+                  onChange={e => setDeptForm({ ...deptForm, code: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-mono focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Monthly Unit Target</label>
+                <input
+                  type="number"
+                  placeholder="100"
+                  value={deptForm.monthlyTarget}
+                  onChange={e => setDeptForm({ ...deptForm, monthlyTarget: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="pt-2 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddDeptModal(false)}
+                  className="px-4 py-2 rounded-xl font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2 rounded-xl flex items-center gap-2"
+                >
+                  {submitting ? <Loader className="animate-spin" size={16} /> : 'Save Department'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

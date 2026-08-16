@@ -26,7 +26,11 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, trim: true },
   email: { type: String, lowercase: true, sparse: true, index: true },
   avatar: String,
-  role: { type: String, enum: ['customer', 'provider', 'admin', 'staff', 'manager', 'team_leader', 'intern'], default: 'customer' },
+  role: {
+    type: String,
+    enum: ['customer', 'provider', 'admin', 'staff', 'manager', 'team_leader', 'executive', 'technician', 'intern'],
+    default: 'customer'
+  },
   permissions: [{ type: String }], // Used for 'staff' role
   employeeId: { type: String, sparse: true, index: true },
   department: String,
