@@ -325,4 +325,5 @@ export const apiService = {
   getCompanyAnalytics: () => api.get('/company/analytics'),
 };
 
+Object.assign(api, apiService);
 export default api;

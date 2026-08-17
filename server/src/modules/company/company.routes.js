@@ -6,7 +6,7 @@ const {
   CompanyMeeting, StaffChatMessage, StaffRequest, CompanyConfig, Attendance, AuditLog, Notification
 } = require('../../models');
 const { authenticate, authorize, requirePermission } = require('../auth/auth.routes');
-const AppError = require('../../utils/appError');
+const { AppError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 const { emitToUser, getIO } = require('../../socket');
 

@@ -21,7 +21,7 @@ const AddressSchema = new mongoose.Schema({
 }, { _id: true });
 
 const UserSchema = new mongoose.Schema({
-  phone: { type: String, unique: true, sparse: true, index: true },
+  phone: { type: String, unique: true, sparse: true },
   firebaseUid: { type: String, unique: true, sparse: true, index: true },
   name: { type: String, trim: true },
   email: { type: String, lowercase: true, sparse: true, index: true },
@@ -99,7 +99,6 @@ const UserSchema = new mongoose.Schema({
 UserSchema.index({ 'addresses.location': '2dsphere' });
 UserSchema.index({ createdAt: -1 });                  // SCALE: Admin user list sort
 UserSchema.index({ isBlocked: 1, role: 1 });          // SCALE: Blocked user filter
-UserSchema.index({ phone: 1 }, { unique: true, sparse: true }); // SCALE: Auth lookup (sparse unique prevents duplicate null errors)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PROVIDER MODEL
@@ -140,7 +139,7 @@ const EarningsSchema = new mongoose.Schema({
 
 const ProviderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
-  phone: { type: String, unique: true, sparse: true, index: true },
+  phone: { type: String, unique: true, sparse: true },
   name: { type: String, required: true, trim: true },
   email: { type: String, lowercase: true },
   avatar: String,
@@ -1377,7 +1376,6 @@ const OperationalRegionSchema = new mongoose.Schema({
 
 OperationalRegionSchema.index({ stateCode: 1, status: 1 });
 OperationalRegionSchema.index({ districtCode: 1, status: 1 });
-OperationalRegionSchema.index({ managerId: 1 });
 
 // 3. GeographicAssignment — binds staff accounts to geographic scope
 const GeographicAssignmentSchema = new mongoose.Schema({
@@ -1431,7 +1429,7 @@ const OperationsAlertSchema = new mongoose.Schema({
   isResolved: { type: Boolean, default: false, index: true },
   resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   resolvedAt: Date,
-  expiresAt: { type: Date, index: true },
+  expiresAt: { type: Date },
 }, { timestamps: true });
 
 OperationsAlertSchema.index({ isRead: 1, severity: 1, createdAt: -1 });
