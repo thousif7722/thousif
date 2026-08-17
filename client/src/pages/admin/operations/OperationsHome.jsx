@@ -64,7 +64,6 @@ export default function OperationsHome() {
 
   const tabs = [
     { id: 'overview', label: '🏠 Overview' },
-    { id: 'map', label: '🗺️ India Map', path: '/admin/operations/map' },
     { id: 'heatmap', label: '🌡️ Heatmap', path: '/admin/operations/heatmap' },
     { id: 'regions', label: '📍 Regions', path: '/admin/operations/regions' },
     { id: 'staff', label: '👥 Staff', path: '/admin/operations/staff' },

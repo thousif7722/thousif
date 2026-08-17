@@ -192,9 +192,8 @@ export default function AdminDashboard() {
             {SIDEBAR_SECTIONS.map((sec, i) => {
               const userPerms = user?.permissions || [];
               const filteredItems = sec.items.filter(item => {
-                if (user?.role === 'admin') return true;
-                if (item.permission === 'admin_only') return false;
-                return userPerms.includes(item.permission);
+                if (item.permission === 'admin_only') return user?.role === 'admin';
+                return user?.role === 'admin' || userPerms.includes(item.permission);
               });
 
               if (filteredItems.length === 0) return null;
