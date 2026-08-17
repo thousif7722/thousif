@@ -1104,14 +1104,17 @@ router.get('/complaints', requirePermission('manage_complaints'), async (req, re
     Complaint.find(filter)
       .populate({
         path: 'bookingId',
-        select: 'bookingNumber scheduledDate totalAmount status providerId customerId',
+        select: 'bookingNumber scheduledDate totalAmount status providerId customerId serviceAddress',
         populate: [
-          { path: 'providerId', select: 'name phone rating' },
-          { path: 'customerId', select: 'name phone' }
+          {
+            path: 'providerId',
+            select: 'name phone rating userId avatar',
+            populate: { path: 'userId', select: 'name phone email avatar' }
+          },
+          { path: 'customerId', select: 'name phone email avatar' }
         ]
       })
-      .populate('raisedBy', 'name phone role')
-      .populate('againstUser', 'name phone rating')
+      .populate('raisedBy', 'name phone role email avatar')
       .populate('assignedTo', 'name')
       .sort({ createdAt: -1 })
       .skip(skip)

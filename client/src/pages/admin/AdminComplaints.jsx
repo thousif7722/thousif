@@ -6,6 +6,38 @@ import { StatusBadge, ConfirmModal } from '@/components/common/UI';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 
+function getCustomerDetails(c) {
+  if (!c) return null;
+  const raisedBy = typeof c.raisedBy === 'object' && c.raisedBy !== null ? c.raisedBy : null;
+  const customerId = typeof c.bookingId?.customerId === 'object' && c.bookingId?.customerId !== null ? c.bookingId.customerId : null;
+  
+  const target = raisedBy?.name ? raisedBy : customerId;
+  if (!target) return null;
+
+  const name = target.name || null;
+  const phone = target.phone || null;
+  const email = target.email || null;
+
+  if (!name && !phone) return null;
+  return { name, phone, email, raw: target };
+}
+
+function getTechnicianDetails(c) {
+  if (!c) return null;
+  const provider = typeof c.bookingId?.providerId === 'object' && c.bookingId?.providerId !== null ? c.bookingId.providerId : null;
+  const againstUser = typeof c.againstUser === 'object' && c.againstUser !== null ? c.againstUser : null;
+
+  const target = provider || againstUser;
+  if (!target) return null;
+
+  const name = target.name || target.userId?.name || null;
+  const phone = target.phone || target.userId?.phone || null;
+  const rating = target.rating || null;
+
+  if (!name && !phone) return null;
+  return { name, phone, rating, raw: target };
+}
+
 export default function AdminComplaints() {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,8 +118,8 @@ export default function AdminComplaints() {
                 ) : complaints.length === 0 ? (
                   <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-400">No complaints found.</td></tr>
                 ) : complaints.map(c => {
-                  const customer = c.raisedBy || c.bookingId?.customerId;
-                  const technician = c.againstUser || c.bookingId?.providerId;
+                  const customer = getCustomerDetails(c);
+                  const tech = getTechnicianDetails(c);
 
                   return (
                     <tr key={c._id} className="hover:bg-slate-50 transition-colors">
@@ -109,26 +141,34 @@ export default function AdminComplaints() {
                               <User size={13} className="text-slate-400" />
                               {customer.name}
                             </div>
-                            <div className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
-                              <Phone size={11} className="text-slate-400" />
-                              {customer.phone}
-                            </div>
+                            {customer.phone ? (
+                              <div className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
+                                <Phone size={11} className="text-slate-400" />
+                                {customer.phone}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-slate-400 italic">No phone number</div>
+                            )}
                           </div>
                         ) : <span className="text-slate-400 italic">Unknown Customer</span>}
                       </td>
                       <td className="px-6 py-4">
-                        {technician ? (
+                        {tech ? (
                           <div>
                             <div className="font-bold text-slate-800 flex items-center gap-1.5">
                               <Wrench size={13} className="text-primary-600" />
-                              {technician.name}
+                              {tech.name}
                             </div>
-                            <div className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
-                              <Phone size={11} className="text-slate-400" />
-                              {technician.phone}
-                            </div>
+                            {tech.phone ? (
+                              <div className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
+                                <Phone size={11} className="text-slate-400" />
+                                {tech.phone}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-amber-700 italic font-medium">Phone unavailable</div>
+                            )}
                           </div>
-                        ) : <span className="text-slate-400 italic">Not Assigned</span>}
+                        ) : <span className="text-slate-400 italic">No technician assigned</span>}
                       </td>
                       <td className="px-6 py-4">
                         {c.bookingId ? (
@@ -213,8 +253,8 @@ export default function AdminComplaints() {
 }
 
 function ComplaintDetailsModal({ complaint, onClose, onReassign }) {
-  const customer = complaint.raisedBy || complaint.bookingId?.customerId;
-  const technician = complaint.againstUser || complaint.bookingId?.providerId;
+  const customer = getCustomerDetails(complaint);
+  const tech = getTechnicianDetails(complaint);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -271,14 +311,22 @@ function ComplaintDetailsModal({ complaint, onClose, onReassign }) {
               </div>
               {customer ? (
                 <div className="space-y-2">
-                  <p className="font-extrabold text-slate-900 text-base">{customer.name}</p>
-                  <a
-                    href={`tel:${customer.phone}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors"
-                  >
-                    <Phone size={12} /> Call: {customer.phone}
-                  </a>
-                  {customer.email && <p className="text-xs text-slate-500">{customer.email}</p>}
+                  <p className="font-extrabold text-slate-900 text-base flex items-center gap-1.5">
+                    <span>👤</span> {customer.name || 'Customer'}
+                  </p>
+                  {customer.phone ? (
+                    <a
+                      href={`tel:${customer.phone}`}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      <Phone size={12} /> Call Customer: {customer.phone}
+                    </a>
+                  ) : (
+                    <p className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md inline-block">
+                      Phone number unavailable
+                    </p>
+                  )}
+                  {customer.email && <p className="text-xs text-slate-500 font-medium">{customer.email}</p>}
                 </div>
               ) : (
                 <p className="text-sm text-slate-400 italic">Customer details unavailable</p>
@@ -290,19 +338,30 @@ function ComplaintDetailsModal({ complaint, onClose, onReassign }) {
               <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
                 <Wrench size={14} className="text-orange-600" /> Technician Assigned
               </div>
-              {technician ? (
+              {tech ? (
                 <div className="space-y-2">
-                  <p className="font-extrabold text-slate-900 text-base">{technician.name}</p>
-                  <a
-                    href={`tel:${technician.phone}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors"
-                  >
-                    <Phone size={12} /> Call: {technician.phone}
-                  </a>
-                  {technician.rating && <p className="text-xs font-bold text-amber-600">⭐ {technician.rating} Rating</p>}
+                  <p className="font-extrabold text-slate-900 text-base flex items-center gap-1.5">
+                    <span>🔧</span> {tech.name || 'Technician'}
+                  </p>
+                  {tech.phone ? (
+                    <a
+                      href={`tel:${tech.phone}`}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition-colors"
+                    >
+                      <Phone size={12} /> Call Technician: {tech.phone}
+                    </a>
+                  ) : (
+                    <p className="text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 inline-block">
+                      Phone number unavailable
+                    </p>
+                  )}
+                  {tech.rating && <p className="text-xs font-bold text-amber-600">⭐ {tech.rating} Rating</p>}
                 </div>
               ) : (
-                <p className="text-sm text-slate-400 italic">No technician assigned yet</p>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold flex items-center gap-2">
+                  <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                  <span>No technician assigned</span>
+                </div>
               )}
             </div>
 
