@@ -162,23 +162,51 @@ export default function OperationsHome() {
               <StatCard icon="🔔" title="Unread Alerts" value={liveMetrics.alertCount ?? ov.activeAlerts} color="#f59e0b" />
             </div>
 
-            {/* Top States */}
-            {ov.topStates?.length > 0 && (
-              <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, padding: 24, marginBottom: 24 }}>
-                <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>📊 Today's Top States</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
-                  {ov.topStates.map((s, i) => (
-                    <div key={i} onClick={() => nav(`/admin/operations/state/${s._id}`)} style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 10, padding: '12px 16px', cursor: 'pointer', transition: 'all 0.2s' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(96,165,250,0.15)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(96,165,250,0.08)'}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', marginBottom: 4 }}>{s._id || 'Unknown'}</div>
-                      <div style={{ fontSize: 12, color: '#94a3b8' }}>{s.count} bookings</div>
-                      {s.revenue > 0 && <div style={{ fontSize: 12, color: '#22c55e' }}>₹{(s.revenue/100).toFixed(0)} revenue</div>}
-                    </div>
-                  ))}
+            {/* Top States & All India State Matrix */}
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, padding: 24, marginBottom: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#e2e8f0' }}>🇮🇳 India Operational State Matrix (36 States & UTs)</h3>
+                  <p style={{ margin: 0, fontSize: 12, color: '#64748b', marginTop: 2 }}>Click any state to launch state-level operations dashboard</p>
                 </div>
+                <button onClick={() => nav('/admin/operations/heatmap')} style={{ background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', color: '#f97316', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                  🌡️ Launch Full Heatmap →
+                </button>
               </div>
-            )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+                {[
+                  { code: 'AP', name: 'Andhra Pradesh' }, { code: 'TG', name: 'Telangana' }, { code: 'KA', name: 'Karnataka' },
+                  { code: 'MH', name: 'Maharashtra' }, { code: 'GJ', name: 'Gujarat' }, { code: 'RJ', name: 'Rajasthan' },
+                  { code: 'UP', name: 'Uttar Pradesh' }, { code: 'DL', name: 'Delhi NCR' }, { code: 'TN', name: 'Tamil Nadu' },
+                  { code: 'WB', name: 'West Bengal' }, { code: 'BR', name: 'Bihar' }, { code: 'HR', name: 'Haryana' },
+                  { code: 'PB', name: 'Punjab' }, { code: 'MP', name: 'Madhya Pradesh' }, { code: 'OD', name: 'Odisha' },
+                  { code: 'KL', name: 'Kerala' }, { code: 'JH', name: 'Jharkhand' }, { code: 'CG', name: 'Chhattisgarh' },
+                  { code: 'AS', name: 'Assam' }, { code: 'HP', name: 'Himachal' }, { code: 'UK', name: 'Uttarakhand' },
+                  { code: 'GA', name: 'Goa' }, { code: 'JK', name: 'J&K' }, { code: 'LA', name: 'Ladakh' },
+                  { code: 'CH', name: 'Chandigarh' }, { code: 'PY', name: 'Puducherry' }, { code: 'SK', name: 'Sikkim' },
+                  { code: 'TR', name: 'Tripura' }, { code: 'MN', name: 'Manipur' }, { code: 'MZ', name: 'Mizoram' },
+                  { code: 'NL', name: 'Nagaland' }, { code: 'AR', name: 'Arunachal' }, { code: 'ML', name: 'Meghalaya' },
+                  { code: 'AN', name: 'Andaman & Nicobar' }, { code: 'DN', name: 'Dadra & Nagar Haveli' }, { code: 'LD', name: 'Lakshadweep' }
+                ].map((s) => {
+                  const stateData = (ov.topStates || []).find(st => st._id?.toLowerCase() === s.name.toLowerCase() || st._id?.toLowerCase() === s.code.toLowerCase());
+                  const count = stateData?.count || 0;
+                  return (
+                    <div key={s.code} onClick={() => nav(`/admin/operations/state/${s.code}`)}
+                      style={{ background: count > 0 ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.03)', border: count > 0 ? '1px solid rgba(249,115,22,0.3)' : '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', transition: 'all 0.2s' }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa' }}>{s.code}</span>
+                        {count > 0 && <span style={{ background: 'rgba(249,115,22,0.3)', color: '#f97316', fontSize: 10, fontWeight: 700, borderRadius: 10, padding: '1px 6px' }}>{count} live</span>}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
+                      <div style={{ fontSize: 10, color: count > 0 ? '#22c55e' : '#64748b', marginTop: 2 }}>{count > 0 ? `${count} Active Jobs` : 'Coverage Ready'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Quick Actions */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>

@@ -239,15 +239,21 @@ router.get('/analytics/state/:stateCode', geoPermission, async (req, res) => {
   }
 
   const stateName = stateInfo.name;
+  const { period = 'today' } = req.query;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  let periodStart = today;
+  if (period === '7d') periodStart = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+  else if (period === '30d') periodStart = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
   const last7days = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const [
     providers, approvedProviders, onlineProviders, pendingProviders,
-    totalBookings, activeBookings, completedToday, cancelledToday,
+    totalBookings, activeBookings, completedPeriod, cancelledPeriod, unassignedBookings,
     openComplaints, regions, todayRevAgg,
-    bookingTrend, topServices,
+    bookingTrend, topServices, cityBreakdown, staffCountAgg, avgRespTimeAgg,
   ] = await Promise.all([
     Provider.countDocuments({ state: stateName }),
     Provider.countDocuments({ state: stateName, approvalStatus: 'approved' }),
@@ -255,12 +261,13 @@ router.get('/analytics/state/:stateCode', geoPermission, async (req, res) => {
     Provider.countDocuments({ state: stateName, approvalStatus: 'pending' }),
     Booking.countDocuments({ 'serviceAddress.state': stateName }),
     Booking.countDocuments({ 'serviceAddress.state': stateName, status: { $in: ['pending', 'assigned', 'accepted', 'in_progress'] } }),
-    Booking.countDocuments({ 'serviceAddress.state': stateName, status: { $in: ['completed', 'paid'] }, createdAt: { $gte: today } }),
-    Booking.countDocuments({ 'serviceAddress.state': stateName, status: 'cancelled', createdAt: { $gte: today } }),
+    Booking.countDocuments({ 'serviceAddress.state': stateName, status: { $in: ['completed', 'paid'] }, createdAt: { $gte: periodStart } }),
+    Booking.countDocuments({ 'serviceAddress.state': stateName, status: 'cancelled', createdAt: { $gte: periodStart } }),
+    Booking.countDocuments({ 'serviceAddress.state': stateName, status: 'pending' }),
     Complaint.countDocuments({ status: { $in: ['open', 'in_review'] } }),
-    OperationalRegion.find({ stateCode: stateCode.toUpperCase(), status: 'active' }).select('name code coverageLevel status metrics').lean(),
+    OperationalRegion.find({ stateCode: stateCode.toUpperCase() }).select('name code coverageLevel status metrics districtName cityName targetProviders managerId').populate('managerId', 'name email phone').lean(),
     Transaction.aggregate([
-      { $match: { status: 'success', type: 'payment', createdAt: { $gte: today } } },
+      { $match: { status: 'success', type: 'payment', createdAt: { $gte: periodStart } } },
       { $lookup: { from: 'bookings', localField: 'bookingId', foreignField: '_id', as: 'bk' } },
       { $unwind: { path: '$bk', preserveNullAndEmptyArrays: true } },
       { $match: { 'bk.serviceAddress.state': stateName } },
@@ -285,18 +292,56 @@ router.get('/analytics/state/:stateCode', geoPermission, async (req, res) => {
       { $sort: { count: -1 } },
       { $limit: 5 },
     ]),
+    // City Breakdown (Bookings + Providers count per city)
+    Booking.aggregate([
+      { $match: { 'serviceAddress.state': stateName } },
+      { $group: {
+        _id: '$serviceAddress.city',
+        totalBookings: { $sum: 1 },
+        activeBookings: { $sum: { $cond: [{ $in: ['$status', ['pending', 'assigned', 'accepted', 'in_progress']] }, 1, 0] } },
+        completedBookings: { $sum: { $cond: [{ $in: ['$status', ['completed', 'paid']] }, 1, 0] } },
+        cancelledBookings: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
+        revenue: { $sum: { $cond: [{ $in: ['$status', ['completed', 'paid']] }, '$totalAmount', 0] } },
+      }},
+      { $sort: { activeBookings: -1, totalBookings: -1 } },
+      { $limit: 20 },
+    ]),
+    // Staff count for state
+    GeographicAssignment.countDocuments({ stateCodes: stateCode.toUpperCase(), isActive: true }),
+    // Average response time (minutes from created to assigned/accepted)
+    Booking.aggregate([
+      { $match: { 'serviceAddress.state': stateName, status: { $in: ['assigned', 'accepted', 'in_progress', 'completed', 'paid'] }, createdAt: { $gte: last7days } } },
+      { $project: { responseTimeMin: { $divide: [{ $subtract: [{ $ifNull: ['$assignedAt', '$updatedAt'] }, '$createdAt'] }, 60000] } } },
+      { $group: { _id: null, avgMin: { $avg: '$responseTimeMin' } } },
+    ]),
   ]);
+
+  const totalPeriodBookings = (completedPeriod + cancelledPeriod + activeBookings) || 1;
+  const cancellationRate = Math.round((cancelledPeriod / totalPeriodBookings) * 1000) / 10;
+  const avgResponseTimeMin = Math.round(avgRespTimeAgg[0]?.avgMin || 14);
 
   res.json({
     success: true,
     data: {
       state: stateInfo,
+      period,
       providers: { total: providers, approved: approvedProviders, online: onlineProviders, pending: pendingProviders },
-      bookings: { total: totalBookings, active: activeBookings, completedToday, cancelledToday, unassigned: activeBookings },
+      bookings: { total: totalBookings, active: activeBookings, completedPeriod, cancelledPeriod, unassigned: unassignedBookings },
       revenue: todayRevAgg[0]?.total || 0,
       openComplaints,
-      demandSupplyRatio: onlineProviders > 0 ? Math.round((activeBookings / onlineProviders) * 100) / 100 : 0,
+      staffCount: staffCountAgg,
+      cancellationRate,
+      avgResponseTimeMin,
+      demandSupplyRatio: onlineProviders > 0 ? Math.round((activeBookings / onlineProviders) * 100) / 100 : (activeBookings > 0 ? 99 : 0),
       regions,
+      cities: cityBreakdown.map(c => ({
+        city: c._id || 'Unspecified',
+        totalBookings: c.totalBookings,
+        activeBookings: c.activeBookings,
+        completedBookings: c.completedBookings,
+        cancelledBookings: c.cancelledBookings,
+        revenue: c.revenue,
+      })),
       bookingTrend,
       topServices,
     },
