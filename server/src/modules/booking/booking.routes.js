@@ -2,7 +2,7 @@
 const express = require('express');
 const Joi = require('joi');
 const mongoose = require('mongoose');
-const { Booking, Provider, Service, MaterialsUsed, User } = require('../../models');
+const { Booking, Provider, Service, MaterialsUsed, User, WalletLedger, Notification } = require('../../models');
 const { authenticate, authorize } = require('../auth/auth.routes');
 const { validateBody, validateQuery } = require('../../middleware/validate');
 const { AppError } = require('../../utils/errors');
@@ -846,6 +846,56 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
     note: `Cancelled by ${cancelledBy}: ${reason || 'No reason given'}${cancellationCharge > 0 ? ` (Compulsory Visit Charge: ₹${cancellationCharge})` : ''}` 
   });
   await booking.save();
+
+  // 💰 Credit Provider Compensation if customer was charged a cancellation/visit fee (Technician Protection)
+  if (cancelledBy === 'customer' && cancellationCharge > 0 && booking.providerId) {
+    try {
+      const provider = await Provider.findById(booking.providerId);
+      if (provider) {
+        const commissionRate = booking.commissionRate || 0.20; // Default 20% platform fee
+        const providerCompensation = Math.round(cancellationCharge * (1 - commissionRate));
+
+        if (providerCompensation > 0) {
+          provider.earnings = provider.earnings || {};
+          provider.earnings.walletBalance = (provider.earnings.walletBalance || 0) + providerCompensation;
+          provider.earnings.totalEarned = (provider.earnings.totalEarned || 0) + providerCompensation;
+          await provider.save();
+
+          await WalletLedger.create({
+            ownerId: provider._id,
+            ownerType: 'provider',
+            type: 'credit',
+            account: 'wallet',
+            amount: providerCompensation,
+            balance: provider.earnings.walletBalance,
+            description: `Compensation payout for customer cancellation on booking #${booking.bookingNumber} (₹${cancellationCharge} fee collected)`,
+            referenceType: 'booking',
+            referenceId: booking._id,
+          });
+
+          const io = getIO();
+          if (io) {
+            io.to(`provider:${provider._id}`).emit('notification:push', {
+              title: '💰 Cancellation Compensation Credited!',
+              body: `You received ₹${providerCompensation} compensation for customer cancellation on booking #${booking.bookingNumber}.`,
+            });
+          }
+
+          Notification.create({
+            userId: provider._id,
+            title: '💰 Cancellation Compensation Credited!',
+            body: `You received ₹${providerCompensation} compensation for customer cancellation on booking #${booking.bookingNumber}.`,
+            type: 'provider_payout',
+            referenceId: booking._id,
+          }).catch(() => {});
+
+          logger.info(`Credited ₹${providerCompensation} cancellation compensation to provider ${provider.name} for booking ${booking.bookingNumber}`);
+        }
+      }
+    } catch (compErr) {
+      logger.error(`Error processing provider cancellation compensation for booking ${booking._id}:`, compErr.message);
+    }
+  }
 
   // 🚨 AUTOMATED RED FLAG & ACCOUNT BLOCK (3+ Post-Start Cancellations Rule)
   if (booking.providerId) {
