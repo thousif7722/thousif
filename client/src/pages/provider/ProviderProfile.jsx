@@ -31,7 +31,8 @@ export default function ProviderProfile() {
 
   useEffect(() => {
     apiService.getMyProfile().then(res => {
-      const p = res.data.data;
+      const p = res.data?.data;
+      if (!p) return;
       setProfile(p);
       setForm({ name: p.name || '', experience: p.experience || 0, serviceRadius: p.serviceRadius || 10 });
       setSelectedServices(p.services?.map(s => s._id || s) || []);
@@ -61,6 +62,9 @@ export default function ProviderProfile() {
       } else {
         setOpenSections({ profile: true, services: true, kyc: true, bank: true });
       }
+    }).catch(err => {
+      // Provider record doesn't exist yet for customer applicant — default to open sections
+      setOpenSections({ profile: true, services: true, kyc: true, bank: true });
     });
   }, []);
 

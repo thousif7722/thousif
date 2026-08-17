@@ -144,6 +144,17 @@ export const logout = createAsyncThunk('auth/logout', async (_, { rejectWithValu
   localStorage.removeItem('user');
 });
 
+export const fetchUserProfile = createAsyncThunk('auth/fetchUserProfile', async (_, { rejectWithValue }) => {
+  try {
+    const res = await apiService.getMe();
+    const user = res.data.data || res.data.user;
+    localStorage.setItem('user', JSON.stringify(user));
+    return user;
+  } catch (err) {
+    return rejectWithValue(err.response?.data?.error || 'Failed to fetch user profile');
+  }
+});
+
 export const activatePlusMembership = createAsyncThunk('auth/activatePlus', async (data, { rejectWithValue }) => {
   try {
     const res = await api.post('/auth/plus', data);
@@ -163,6 +174,7 @@ const authSlice = createSlice({
   initialState: {
     user: (() => { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } })(),
     accessToken: localStorage.getItem('accessToken'),
+    activeMode: localStorage.getItem('activeMode') || null,
     otpSent: false,
     otpPhone: null,
     needsPhone: false,
@@ -174,7 +186,12 @@ const authSlice = createSlice({
     error: null,
   },
   reducers: {
-    setUser(state, action) { state.user = action.payload; },
+    setUser(state, action) {
+      state.user = action.payload;
+      if (action.payload) {
+        localStorage.setItem('user', JSON.stringify(action.payload));
+      }
+    },
     clearError(state) { state.error = null; },
     resetOtp(state) { state.otpSent = false; state.otpPhone = null; },
     resetRoleSelection(state) {
@@ -184,7 +201,14 @@ const authSlice = createSlice({
       state.needsRoleSelection = false;
       state.pendingGoogleUser = null;
     },
-    updateUser(state, action) { state.user = { ...state.user, ...action.payload }; },
+    updateUser(state, action) {
+      state.user = { ...state.user, ...action.payload };
+      localStorage.setItem('user', JSON.stringify(state.user));
+    },
+    setActiveMode(state, action) {
+      state.activeMode = action.payload;
+      localStorage.setItem('activeMode', action.payload);
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -283,12 +307,16 @@ const authSlice = createSlice({
       .addCase(activatePlusMembership.rejected, (state, action) => {
         state.loading = false;
         toast.error(action.payload);
+      })
+      .addCase(fetchUserProfile.fulfilled, (state, action) => {
+        state.user = action.payload;
       });
   },
 });
 
-export const { setUser, clearError, resetOtp, resetRoleSelection, updateUser } = authSlice.actions;
+export const { setUser, clearError, resetOtp, resetRoleSelection, updateUser, setActiveMode } = authSlice.actions;
 export const selectUser = (state) => state.auth.user;
+export const selectActiveMode = (state) => state.auth.activeMode || (state.auth.user?.role === 'provider' ? 'provider' : 'customer');
 export const selectIsAuthenticated = (state) => !!state.auth.user;
 export const selectAuthLoading = (state) => state.auth.loading;
 export const selectUserRole = (state) => state.auth.user?.role;

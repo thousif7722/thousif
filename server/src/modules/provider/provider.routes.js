@@ -13,41 +13,54 @@ const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // ── Provider Profile ────────────────────────────────────────────────────────────
-router.get('/me', authenticate, authorize('provider'), async (req, res) => {
-  const provider = await Provider.findById(req.userId)
+router.get('/me', authenticate, async (req, res) => {
+  const provider = await Provider.findOne({ $or: [{ userId: req.userId }, { _id: req.userId }] })
     .populate('services', 'name category icon')
     .lean();
-  if (!provider) throw new AppError('Provider not found', 404);
+  if (!provider) throw new AppError('Provider profile not found', 404);
   res.json({ success: true, data: provider });
 });
 
-router.put('/me', authenticate, authorize('provider'), async (req, res) => {
+router.put('/me', authenticate, async (req, res) => {
   const allowed = ['name', 'email', 'avatar', 'specializations', 'experience', 'serviceRadius', 'city', 'state', 'availability', 'fcmToken'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
-  const provider = await Provider.findByIdAndUpdate(req.userId, updates, { new: true, runValidators: true });
+  const provider = await Provider.findOneAndUpdate({ $or: [{ userId: req.userId }, { _id: req.userId }] }, updates, { new: true, runValidators: true });
+  if (!provider) throw new AppError('Provider profile not found', 404);
   res.json({ success: true, data: provider });
 });
 
 // ── KYC Upload ─────────────────────────────────────────────────────────────────
-router.post('/me/kyc', authenticate, authorize('provider'),
+router.post('/me/kyc', authenticate,
   upload.fields([
     { name: 'aadhaarDoc', maxCount: 1 },
     { name: 'panDoc', maxCount: 1 },
     { name: 'selfie', maxCount: 1 },
   ]),
   async (req, res) => {
-    const provider = await Provider.findById(req.userId);
-    if (!provider) throw new AppError('Provider not found', 404);
-    // Allow re-submission even if verified so providers can update their details
+    let provider = await Provider.findOne({ $or: [{ userId: req.userId }, { _id: req.userId }] });
+    if (!provider) {
+      const user = await User.findById(req.userId);
+      if (!user) throw new AppError('User not found', 404);
+      provider = await Provider.create({
+        userId: user._id,
+        phone: user.phone,
+        email: user.email,
+        name: user.name || 'Service Provider',
+        avatar: user.avatar,
+        approvalStatus: 'pending',
+        currentLocation: { type: 'Point', coordinates: [0, 0] }
+      });
+    }
 
     const kycUpdate = {
-      aadhaarNumber: req.body.aadhaarNumber,
-      panNumber: req.body.panNumber,
       status: 'submitted',
+      rejectionReason: undefined,
     };
+    if (req.body.aadhaarNumber) kycUpdate.aadhaarNumber = req.body.aadhaarNumber;
+    if (req.body.panNumber) kycUpdate.panNumber = req.body.panNumber;
 
     const uploadFile = async (field) => {
-      if (!req.files?.[field]?.[0]) return;
+      if (!req.files?.[field]?.[0]) return provider.kyc?.[field];
       const file = req.files[field][0];
       return s3Service.upload(
         `kyc/${provider._id}/${field}_${Date.now()}`,
@@ -56,9 +69,13 @@ router.post('/me/kyc', authenticate, authorize('provider'),
       );
     };
 
-    kycUpdate.aadhaarDoc = await uploadFile('aadhaarDoc');
-    kycUpdate.panDoc = await uploadFile('panDoc');
-    kycUpdate.selfie = await uploadFile('selfie');
+    const aadhaarDoc = await uploadFile('aadhaarDoc');
+    const panDoc = await uploadFile('panDoc');
+    const selfie = await uploadFile('selfie');
+
+    if (aadhaarDoc) kycUpdate.aadhaarDoc = aadhaarDoc;
+    if (panDoc) kycUpdate.panDoc = panDoc;
+    if (selfie) kycUpdate.selfie = selfie;
 
     // Auto-assign to KYC staff
     const assignedStaffId = await getLeastBusyStaff('manage_providers', 'kyc');
@@ -67,10 +84,18 @@ router.post('/me/kyc', authenticate, authorize('provider'),
     }
 
     provider.kyc = { ...provider.kyc, ...kycUpdate };
-    if (provider.approvalStatus === 'rejected') {
-      provider.approvalStatus = 'pending';
-    }
+    provider.approvalStatus = 'pending';
     await provider.save();
+
+    // Set User providerApplicationStatus back to pending
+    const user = await User.findById(provider.userId);
+    if (user) {
+      user.providerApplicationStatus = 'pending';
+      user.providerApplicationId = provider._id;
+      user.rejectionReason = null;
+      await user.save();
+    }
+
     res.json({ success: true, message: 'KYC documents submitted for review.' });
   }
 );
@@ -150,23 +175,25 @@ router.put('/me/availability', authenticate, authorize('provider'), async (req, 
 });
 
 // ── Services Selection ─────────────────────────────────────────────────────────
-router.put('/me/services', authenticate, authorize('provider'), async (req, res) => {
+router.put('/me/services', authenticate, async (req, res) => {
   const { serviceIds } = req.body;
   if (!Array.isArray(serviceIds)) throw new AppError('serviceIds must be an array', 400);
-  const provider = await Provider.findByIdAndUpdate(req.userId, { services: serviceIds }, { new: true })
+  const provider = await Provider.findOneAndUpdate({ $or: [{ userId: req.userId }, { _id: req.userId }] }, { services: serviceIds }, { new: true })
     .populate('services', 'name category');
+  if (!provider) throw new AppError('Provider profile not found', 404);
   res.json({ success: true, data: { services: provider.services } });
 });
 
 // ── Bank Account ───────────────────────────────────────────────────────────────
-router.put('/me/bank', authenticate, authorize('provider'), async (req, res) => {
+router.put('/me/bank', authenticate, async (req, res) => {
   const { accountNumber, ifscCode, bankName, accountHolder } = req.body;
   if (!accountNumber || !ifscCode || !bankName || !accountHolder) {
     throw new AppError('All bank fields required', 400);
   }
-  await Provider.findByIdAndUpdate(req.userId, {
+  const provider = await Provider.findOneAndUpdate({ $or: [{ userId: req.userId }, { _id: req.userId }] }, {
     'earnings.bankAccount': { accountNumber, ifscCode, bankName, accountHolder, verified: false },
-  });
+  }, { new: true });
+  if (!provider) throw new AppError('Provider profile not found', 404);
   res.json({ success: true, message: 'Bank account saved. Will be verified in 1-2 business days.' });
 });
 

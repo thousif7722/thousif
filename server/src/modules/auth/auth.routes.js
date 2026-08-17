@@ -113,16 +113,16 @@ async function storeRefreshToken(userId, sessionId, refreshToken) {
 }
 
 async function formatUserResponse(user) {
-  let providerStatus = 'not_applicable';
+  let providerStatus = user.providerApplicationStatus || 'none';
   let providerId = null;
 
-  if (user.role === 'provider') {
-    const provider = await Provider.findOne({ userId: user._id }).select('_id approvalStatus').lean();
-    if (provider) {
+  const provider = await Provider.findOne({ userId: user._id }).select('_id approvalStatus kyc.rejectionReason').lean();
+  if (provider) {
+    providerId = provider._id.toString();
+    if (user.role === 'provider') {
       providerStatus = provider.approvalStatus;
-      providerId = provider._id.toString();
     } else {
-      providerStatus = 'pending';
+      providerStatus = user.providerApplicationStatus || provider.approvalStatus || 'none';
     }
   }
 
@@ -134,10 +134,12 @@ async function formatUserResponse(user) {
     email: user.email || '',
     avatar: user.avatar || '',
     photoURL: user.avatar || '',
-    role: user.role,
+    role: user.role, // 'customer' or 'provider' or 'admin' / 'staff'
     status: user.status || 'active',
+    providerApplicationStatus: user.providerApplicationStatus || providerStatus,
     providerStatus: providerStatus,
     providerId: providerId,
+    rejectionReason: user.rejectionReason || provider?.kyc?.rejectionReason || null,
     permissions: user.permissions || [],
     walletBalance: user.walletBalance || 0,
     isPlusMember: Boolean(user.subscription?.isPlusMember),
@@ -544,16 +546,30 @@ router.post('/link-google-account', authenticate, async (req, res) => {
 });
 
 /**
- * POST /auth/become-provider
- * Upgrades customer profile to provider (requires KYC & Admin Approval).
+ * GET /auth/me
+ * Returns current authenticated user profile with latest role & providerApplicationStatus.
+ */
+router.get('/me', authenticate, async (req, res) => {
+  const user = await User.findById(req.userId);
+  if (!user) throw new AppError('User not found', 404);
+  const formattedUser = await formatUserResponse(user);
+  res.json({ success: true, data: formattedUser, user: formattedUser });
+});
+
+/**
+ * POST /auth/become-provider (Provider Application Submission)
+ * Customer applies to become a Service Provider.
+ * Account REMAINS 'customer' until Admin approves! Status becomes 'pending'.
  */
 router.post('/become-provider', authenticate, async (req, res) => {
   const user = await User.findById(req.userId);
   if (!user) throw new AppError('User not found', 404);
 
-  if (user.role === 'provider') {
-    throw new AppError('Account is already a Service Provider profile.', 400);
+  if (user.role === 'provider' && user.providerApplicationStatus === 'approved') {
+    throw new AppError('Account is already an approved Service Provider profile.', 400);
   }
+
+  const { name, experience, serviceRadius, services, city, bankAccount, aadhaarNumber, panNumber } = req.body || {};
 
   let provider = await Provider.findOne({ userId: user._id });
   if (!provider) {
@@ -561,25 +577,49 @@ router.post('/become-provider', authenticate, async (req, res) => {
       userId: user._id,
       phone: user.phone,
       email: user.email,
-      name: user.name || 'Service Provider',
+      name: name || user.name || 'Service Provider',
       avatar: user.avatar,
+      experience: Number(experience) || 0,
+      serviceRadius: Number(serviceRadius) || 10,
+      city: city || user.city,
       approvalStatus: 'pending',
+      kyc: {
+        status: 'submitted',
+        aadhaarNumber: aadhaarNumber || undefined,
+        panNumber: panNumber || undefined,
+      },
       currentLocation: { type: 'Point', coordinates: [0, 0] }
     });
+  } else {
+    provider.approvalStatus = 'pending';
+    if (!provider.kyc) provider.kyc = {};
+    provider.kyc.status = 'submitted';
+    provider.kyc.rejectionReason = undefined;
+    if (name) provider.name = name;
+    if (experience !== undefined) provider.experience = Number(experience);
+    if (serviceRadius !== undefined) provider.serviceRadius = Number(serviceRadius);
+    if (city) provider.city = city;
+    if (services && Array.isArray(services)) provider.services = services;
+    if (bankAccount) {
+      provider.earnings = provider.earnings || {};
+      provider.earnings.bankAccount = { ...provider.earnings.bankAccount, ...bankAccount };
+    }
+    if (aadhaarNumber) provider.kyc.aadhaarNumber = aadhaarNumber;
+    if (panNumber) provider.kyc.panNumber = panNumber;
+    await provider.save();
   }
 
-  user.role = 'provider';
+  // Preserve user account as CUSTOMER until admin approval!
+  user.providerApplicationStatus = 'pending';
+  user.providerApplicationId = provider._id;
+  user.rejectionReason = null;
   await user.save();
 
   const formattedUser = await formatUserResponse(user);
-  const tokens = generateTokens(provider._id, 'provider');
-  await storeRefreshToken(provider._id, tokens.sessionId, tokens.refreshToken);
 
   res.json({
     success: true,
-    message: 'Profile converted to Provider. Complete KYC for approval.',
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
+    message: 'Application submitted successfully. Our verification team will review your profile.',
     user: formattedUser,
   });
 });
@@ -768,10 +808,12 @@ async function authenticate(req, res, next) {
       req.providerId = decoded.userId;
       req.isProvider = true;
     } else {
-      const provider = await Provider.findOne({ userId: decoded.userId }).select('_id').lean();
+      const provider = await Provider.findOne({ userId: decoded.userId }).select('_id approvalStatus').lean();
       if (provider) {
         req.providerId = provider._id.toString();
-        req.isProvider = true;
+        req.isProvider = (provider.approvalStatus === 'approved');
+      } else {
+        req.isProvider = false;
       }
     }
 
@@ -789,9 +831,11 @@ async function authenticate(req, res, next) {
 
 function authorize(...roles) {
   return (req, res, next) => {
-    const hasRole = roles.includes(req.userRole) || (roles.includes('provider') && req.isProvider);
-    if (!hasRole) {
-      return next(new AppError('You are not authorized to perform this action', 403));
+    // If route specifies 'provider', user MUST have role 'provider' or be approved provider or admin/staff
+    const isAllowed = roles.includes(req.userRole) ||
+                      (roles.includes('provider') && (req.userRole === 'provider' || req.isProvider));
+    if (!isAllowed) {
+      return next(new AppError('You are not authorized to access provider features.', 403));
     }
     next();
   };
@@ -799,8 +843,8 @@ function authorize(...roles) {
 
 async function requireProviderApproval(req, res, next) {
   try {
-    if (req.userRole !== 'provider' && !req.isProvider) {
-      return next(new AppError('Unauthorized: Provider access required', 403));
+    if (req.userRole !== 'provider' && req.userRole !== 'admin' && req.userRole !== 'staff') {
+      return next(new AppError('Unauthorized: Provider account required', 403));
     }
     const provider = await Provider.findOne({ userId: req.userId }).select('approvalStatus isBlocked').lean();
     if (!provider) {
@@ -809,8 +853,8 @@ async function requireProviderApproval(req, res, next) {
     if (provider.isBlocked) {
       return next(new AppError('Your provider account has been blocked or suspended by administrator.', 403));
     }
-    if (provider.approvalStatus !== 'approved') {
-      return next(new AppError(`Provider access restricted. Current account status: ${provider.approvalStatus}. Admin approval required.`, 403));
+    if (provider.approvalStatus !== 'approved' && req.userRole !== 'admin') {
+      return next(new AppError(`Provider access restricted. Account verification status: ${provider.approvalStatus}. Admin approval required.`, 403));
     }
     req.provider = provider;
     next();

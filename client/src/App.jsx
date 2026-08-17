@@ -21,6 +21,7 @@ const TrackingPage     = lazy(() => import('@/pages/customer/TrackingPage'));
 const PaymentPage      = lazy(() => import('@/pages/customer/PaymentPage'));
 const PlusMembership   = lazy(() => import('@/pages/customer/PlusMembership'));
 const ProfilePage      = lazy(() => import('@/pages/customer/ProfilePage'));
+const BecomeProviderPage = lazy(() => import('@/pages/customer/BecomeProviderPage'));
 
 const ProviderDashboard= lazy(() => import('@/pages/provider/ProviderDashboard'));
 const ProviderBookings = lazy(() => import('@/pages/provider/ProviderBookings'));
@@ -63,9 +64,9 @@ function ProtectedRoute({ children, allowedRoles, requiredPermission, allowPendi
     return <Navigate to={getRoleHome(user)} replace />;
   }
 
-  // Provider Approval Protection Guard
-  if (user.role === 'provider' && !allowPendingProvider) {
-    if (user.providerStatus && user.providerStatus !== 'approved') {
+  // Provider Protection Guard for provider-only dashboard routes
+  if (location.pathname.startsWith('/provider') && location.pathname !== '/provider/pending' && location.pathname !== '/provider/profile') {
+    if (user.role !== 'provider' || user.providerApplicationStatus === 'pending' || user.providerApplicationStatus === 'rejected') {
       return <Navigate to="/provider/pending" replace />;
     }
   }
@@ -84,11 +85,9 @@ function ProtectedRoute({ children, allowedRoles, requiredPermission, allowPendi
 function getRoleHome(user) {
   if (!user) return '/login';
   if (user.role === 'admin' || user.role === 'staff') return '/admin';
-  if (user.role === 'provider') {
-    if (user.providerStatus && user.providerStatus !== 'approved') {
-      return '/provider/pending';
-    }
-    return '/provider';
+  if (user.role === 'provider') return '/provider';
+  if (user.providerApplicationStatus === 'pending' || user.providerApplicationStatus === 'rejected') {
+    return '/provider/pending';
   }
   return '/';
 }
@@ -149,30 +148,31 @@ export default function App() {
         <Route path="/service/:slug" element={<PublicServicePage />} />
 
         {/* Customer */}
-        <Route path="/" element={<ProtectedRoute allowedRoles={['customer']}><HomePage /></ProtectedRoute>} />
-        <Route path="/category/:categoryName" element={<ProtectedRoute allowedRoles={['customer']}><CategoryServicesPage /></ProtectedRoute>} />
-        <Route path="/services/:id" element={<ProtectedRoute allowedRoles={['customer']}><ServiceDetail /></ProtectedRoute>} />
-        <Route path="/book/:serviceId" element={<ProtectedRoute allowedRoles={['customer']}><BookingForm /></ProtectedRoute>} />
-        <Route path="/bookings" element={<ProtectedRoute allowedRoles={['customer']}><MyBookings /></ProtectedRoute>} />
-        <Route path="/complaints" element={<ProtectedRoute allowedRoles={['customer']}><CustomerComplaints /></ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><HomePage /></ProtectedRoute>} />
+        <Route path="/category/:categoryName" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><CategoryServicesPage /></ProtectedRoute>} />
+        <Route path="/services/:id" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><ServiceDetail /></ProtectedRoute>} />
+        <Route path="/book/:serviceId" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><BookingForm /></ProtectedRoute>} />
+        <Route path="/bookings" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><MyBookings /></ProtectedRoute>} />
+        <Route path="/complaints" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><CustomerComplaints /></ProtectedRoute>} />
 
-        <Route path="/bookings/:id" element={<ProtectedRoute allowedRoles={['customer']}><BookingDetail /></ProtectedRoute>} />
+        <Route path="/bookings/:id" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><BookingDetail /></ProtectedRoute>} />
         <Route path="/bookings/:id/track" element={<Navigate to="/bookings/:id" replace />} />
-        <Route path="/bookings/:id/pay" element={<ProtectedRoute allowedRoles={['customer']}><PaymentPage /></ProtectedRoute>} />
-        <Route path="/plus" element={<ProtectedRoute allowedRoles={['customer']}><PlusMembership /></ProtectedRoute>} />
-        <Route path="/profile" element={<ProtectedRoute allowedRoles={['customer']}><ProfilePage /></ProtectedRoute>} />
+        <Route path="/bookings/:id/pay" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><PaymentPage /></ProtectedRoute>} />
+        <Route path="/plus" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><PlusMembership /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute allowedRoles={['customer', 'provider']}><ProfilePage /></ProtectedRoute>} />
+        <Route path="/become-provider" element={<ProtectedRoute allowedRoles={['customer', 'provider']} allowPendingProvider={true}><BecomeProviderPage /></ProtectedRoute>} />
 
         {/* Shared */}
         <Route path="/notifications" element={<ProtectedRoute allowedRoles={['customer', 'provider', 'admin', 'staff']} allowPendingProvider={true}><NotificationsPage /></ProtectedRoute>} />
 
         {/* Provider */}
         <Route path="/provider" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderDashboard /></ProviderLockoutGuard></ProtectedRoute>} />
-        <Route path="/provider/pending" element={<ProtectedRoute allowedRoles={['provider']} allowPendingProvider={true}><ProviderPendingPage /></ProtectedRoute>} />
-        <Route path="/provider/onboarding" element={<ProtectedRoute allowedRoles={['provider']} allowPendingProvider={true}><ProviderProfile /></ProtectedRoute>} />
+        <Route path="/provider/pending" element={<ProtectedRoute allowedRoles={['customer', 'provider']} allowPendingProvider={true}><ProviderPendingPage /></ProtectedRoute>} />
+        <Route path="/provider/onboarding" element={<ProtectedRoute allowedRoles={['customer', 'provider']} allowPendingProvider={true}><ProviderProfile /></ProtectedRoute>} />
         <Route path="/provider/bookings" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderBookings /></ProviderLockoutGuard></ProtectedRoute>} />
         <Route path="/provider/bookings/:id/materials" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><MaterialsBilling /></ProviderLockoutGuard></ProtectedRoute>} />
         <Route path="/provider/earnings" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderEarnings /></ProviderLockoutGuard></ProtectedRoute>} />
-        <Route path="/provider/profile" element={<ProtectedRoute allowedRoles={['provider']} allowPendingProvider={true}><ProviderLockoutGuard><ProviderProfile /></ProviderLockoutGuard></ProtectedRoute>} />
+        <Route path="/provider/profile" element={<ProtectedRoute allowedRoles={['customer', 'provider']} allowPendingProvider={true}><ProviderLockoutGuard><ProviderProfile /></ProviderLockoutGuard></ProtectedRoute>} />
         <Route path="/provider/complaints" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLockoutGuard><ProviderComplaints /></ProviderLockoutGuard></ProtectedRoute>} />
 
         {/* Admin & Staff Permission Guarded Routes */}

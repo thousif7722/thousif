@@ -157,6 +157,29 @@ export default function MobileDrawer({ isOpen, onClose }) {
             </div>
           )}
 
+          {/* Role Switcher for Approved Providers */}
+          {user?.role === 'provider' && (
+            <div className="px-5 pt-3 pb-1">
+              <button
+                onClick={() => {
+                  onClose();
+                  if (location.pathname.startsWith('/provider')) {
+                    navigate('/');
+                  } else {
+                    navigate('/provider');
+                  }
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold text-xs shadow-md transition-all"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">{location.pathname.startsWith('/provider') ? '🛒' : '⚡'}</span>
+                  <span>{location.pathname.startsWith('/provider') ? 'Switch to Customer Panel' : 'Switch to Provider Dashboard'}</span>
+                </div>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+
           {/* Links */}
           <div className="py-2 px-3">
             {menuItems.map((item, idx) => {

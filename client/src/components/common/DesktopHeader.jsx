@@ -333,6 +333,20 @@ export default function DesktopHeader() {
               </div>
             )}
           </div>
+          {user?.role === 'provider' && (
+            <button
+              onClick={() => {
+                if (location.pathname.startsWith('/provider')) {
+                  navigate('/');
+                } else {
+                  navigate('/provider');
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs shadow-sm transition-all ml-1 shrink-0"
+            >
+              <span>{location.pathname.startsWith('/provider') ? '🛒 Customer Panel' : '⚡ Provider Panel'}</span>
+            </button>
+          )}
           <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
             <div className="text-right">
               <p className="text-sm font-bold text-slate-800 leading-none">{user?.name || 'User'}</p>

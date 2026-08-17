@@ -688,37 +688,79 @@ router.get('/providers', requirePermission('manage_providers'), async (req, res)
 });
 
 router.put('/providers/:id/approve', requirePermission('manage_providers'), async (req, res) => {
-  const provider = await Provider.findByIdAndUpdate(
-    req.params.id,
-    { approvalStatus: 'approved', 'kyc.status': 'verified', 'kyc.verifiedAt': new Date(), 'kyc.verifiedBy': req.userId },
-    { new: true }
-  );
-  if (!provider) throw new AppError('Provider not found', 404);
+  const provider = await Provider.findById(req.params.id);
+  if (!provider) throw new AppError('Provider application not found', 404);
+
+  provider.approvalStatus = 'approved';
+  if (!provider.kyc) provider.kyc = {};
+  provider.kyc.status = 'verified';
+  provider.kyc.verifiedAt = new Date();
+  provider.kyc.verifiedBy = req.userId;
+  await provider.save();
+
+  // CONVERT THE SAME ACCOUNT: user.role = 'provider', user.providerApplicationStatus = 'approved'
+  const user = await User.findById(provider.userId);
+  if (user) {
+    user.role = 'provider';
+    user.providerApplicationStatus = 'approved';
+    user.approvedAt = new Date();
+    user.approvedBy = req.userId;
+    user.rejectionReason = null;
+    await user.save();
+  }
 
   // Notify provider
   const { notificationQueue } = require('../../jobs');
-  await notificationQueue.add('booking_update', {
-    userId: provider.userId,
-    title: 'Account Approved! 🎉',
-    body: 'Your ServiceHub provider account has been approved. You can now start accepting bookings!',
-    type: 'system',
-  });
+  if (notificationQueue) {
+    await notificationQueue.add('booking_update', {
+      userId: provider.userId,
+      title: 'Provider Application Approved! 🎉',
+      body: 'Your OneWayFix Service Provider application has been approved! You can now access the Provider Dashboard and accept job requests.',
+      type: 'system',
+    }).catch(() => {});
+  }
 
-  logger.info(`Provider ${provider._id} approved by admin ${req.userId}`);
-  res.json({ success: true, message: `Provider ${provider.name} approved` });
+  logger.info(`Provider ${provider._id} (User: ${provider.userId}) approved by admin ${req.userId}`);
+  res.json({ success: true, message: `Provider ${provider.name} approved successfully!` });
 });
 
 router.put('/providers/:id/reject', requirePermission('manage_providers'), async (req, res) => {
   const { reason } = req.body;
-  if (!reason) throw new AppError('Rejection reason required', 400);
+  if (!reason || !reason.trim()) throw new AppError('Rejection reason is required', 400);
 
-  const provider = await Provider.findByIdAndUpdate(
-    req.params.id,
-    { approvalStatus: 'rejected', 'kyc.status': 'rejected', 'kyc.rejectionReason': reason },
-    { new: true }
-  );
-  if (!provider) throw new AppError('Provider not found', 404);
-  res.json({ success: true, message: 'Provider rejected' });
+  const provider = await Provider.findById(req.params.id);
+  if (!provider) throw new AppError('Provider application not found', 404);
+
+  provider.approvalStatus = 'rejected';
+  if (!provider.kyc) provider.kyc = {};
+  provider.kyc.status = 'rejected';
+  provider.kyc.rejectionReason = reason.trim();
+  await provider.save();
+
+  // KEEP ACCOUNT AS CUSTOMER: user.role = 'customer', user.providerApplicationStatus = 'rejected'
+  const user = await User.findById(provider.userId);
+  if (user) {
+    user.role = 'customer';
+    user.providerApplicationStatus = 'rejected';
+    user.rejectionReason = reason.trim();
+    user.rejectedAt = new Date();
+    user.rejectedBy = req.userId;
+    await user.save();
+  }
+
+  // Notify customer
+  const { notificationQueue } = require('../../jobs');
+  if (notificationQueue) {
+    await notificationQueue.add('booking_update', {
+      userId: provider.userId,
+      title: 'Provider Application Update ⚠️',
+      body: `Your provider application requires update: ${reason.trim()}`,
+      type: 'system',
+    }).catch(() => {});
+  }
+
+  logger.info(`Provider ${provider._id} (User: ${provider.userId}) rejected by admin ${req.userId}: ${reason}`);
+  res.json({ success: true, message: 'Provider application rejected.' });
 });
 
 router.put('/providers/:id/block', requirePermission('manage_providers'), async (req, res) => {

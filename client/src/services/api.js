@@ -116,6 +116,7 @@ function clearAuthAndRedirect() {
 // ── Helper methods ─────────────────────────────────────────────────────────────
 export const apiService = {
   // Auth
+  getMe: () => api.get('/auth/me'),
   googleAuthenticate: (data) => api.post('/auth/google-authenticate', data),
   completeRegistration: (data) => api.post('/auth/complete-registration', data),
   checkPhone: (phone) => api.get('/auth/check-phone', { params: { phone } }),

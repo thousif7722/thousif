@@ -6,7 +6,7 @@ import Footer from '@/components/common/Footer';
 import { User, Phone, Mail, Wallet, Star, Tag, LogOut, ChevronRight, Edit3, Check } from 'lucide-react';
 import { apiService } from '@/services/api';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function ProfilePage() {
   const user = useSelector(selectUser);
@@ -148,18 +148,45 @@ export default function ProfilePage() {
             </button>
           ))}
           
-          {user?.role === 'customer' && (
+          {/* Provider Application / Switcher Card */}
+          {user?.role === 'provider' ? (
+            <Link
+              to="/provider"
+              className="w-full flex items-center gap-4 px-5 py-4 text-left border-t border-slate-100 hover:bg-emerald-50 text-emerald-700 transition-colors"
+            >
+              <span className="text-lg">⚡</span>
+              <span className="flex-1 text-sm font-bold">Switch to Provider Dashboard</span>
+              <ChevronRight size={16} className="text-emerald-500" />
+            </Link>
+          ) : user?.providerApplicationStatus === 'pending' ? (
+            <div className="p-4 bg-amber-50 border-t border-amber-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-amber-900">Provider Application Pending</p>
+                <p className="text-xs text-amber-700">Under review. Your account remains Customer.</p>
+              </div>
+              <button
+                onClick={() => navigate('/provider/pending')}
+                className="text-xs font-bold text-amber-800 bg-amber-200/80 px-3 py-1.5 rounded-lg hover:bg-amber-300 transition-colors"
+              >
+                View Status
+              </button>
+            </div>
+          ) : user?.providerApplicationStatus === 'rejected' ? (
+            <div className="p-4 bg-rose-50 border-t border-rose-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-rose-900">Application Needs Revision</p>
+                <p className="text-xs text-rose-700 max-w-[200px] truncate">{user?.rejectionReason || 'Update documents to re-apply'}</p>
+              </div>
+              <button
+                onClick={() => navigate('/provider/pending')}
+                className="text-xs font-bold text-white bg-rose-600 px-3 py-1.5 rounded-lg hover:bg-rose-700 transition-colors"
+              >
+                Re-apply
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={async () => {
-                try {
-                  const res = await apiService.becomeProvider();
-                  toast.success(res.data.message || 'Profile upgraded!');
-                  dispatch(updateUser(res.data.user));
-                  navigate('/provider/pending');
-                } catch (err) {
-                  toast.error(err.response?.data?.error || 'Failed to become provider');
-                }
-              }}
+              onClick={() => navigate('/become-provider')}
               className="w-full flex items-center gap-4 px-5 py-4 text-left border-t border-slate-100 hover:bg-blue-50 text-blue-600 transition-colors"
             >
               <span className="text-lg">🔧</span>

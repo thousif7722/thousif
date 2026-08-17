@@ -70,6 +70,20 @@ const UserSchema = new mongoose.Schema({
   },
   availability: { type: String, enum: ['available', 'busy', 'offline'], default: 'offline' },
   
+  // Provider Application Tracking (Non-destructive Account Conversion Workflow)
+  providerApplicationStatus: {
+    type: String,
+    enum: ['none', 'pending', 'under_review', 'approved', 'rejected'],
+    default: 'none',
+    index: true,
+  },
+  providerApplicationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Provider' },
+  rejectionReason: { type: String, default: null },
+  approvedAt: Date,
+  approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejectedAt: Date,
+  rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
   // ServiceHub PLUS Subscription Membership (Pillar 5)
   subscription: {
     isPlusMember: { type: Boolean, default: false },
