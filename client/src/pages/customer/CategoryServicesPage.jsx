@@ -113,11 +113,15 @@ function ServiceCard({ service, qty, onQtyChange, onBook, accentColor }) {
             )}
 
             {/* Price */}
-            <div className="flex items-baseline gap-1 mt-2">
-              <span className="text-xl font-extrabold text-slate-900">₹{(service.basePrice * qty).toLocaleString('en-IN')}</span>
-              {qty > 1 && (
-                <span className="text-xs text-slate-400">(₹{service.basePrice} × {qty})</span>
-              )}
+            <div className="mt-2">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-xs font-semibold text-slate-500">Starting</span>
+                <span className="text-xl font-extrabold text-slate-900">₹{(service.basePrice * qty).toLocaleString('en-IN')}</span>
+                {qty > 1 && (
+                  <span className="text-xs text-slate-400 font-medium">(₹{service.basePrice} × {qty})</span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">Price may vary based on condition</p>
             </div>
           </div>
         </div>
@@ -138,31 +142,34 @@ function ServiceCard({ service, qty, onQtyChange, onBook, accentColor }) {
         )}
 
         {/* Quantity + Book */}
-        <div className="mt-4 flex items-center gap-3">
-          {/* Quantity selector */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
-            <button
-              onClick={() => onQtyChange(service._id, Math.max(1, qty - 1))}
-              className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 active:scale-95 transition-transform"
-            >
-              <Minus size={14} />
-            </button>
-            <span className="w-8 text-center font-bold text-slate-900 text-sm">{qty}</span>
-            <button
-              onClick={() => onQtyChange(service._id, Math.min(10, qty + 1))}
-              className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 active:scale-95 transition-transform"
-            >
-              <Plus size={14} />
-            </button>
+        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+          {/* Quantity selector with label */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-600 shrink-0">Quantity:</span>
+            <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl p-1">
+              <button
+                onClick={() => onQtyChange(service._id, Math.max(1, qty - 1))}
+                className="w-7 h-7 rounded-lg bg-white shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 active:scale-95 transition-transform"
+              >
+                <Minus size={13} />
+              </button>
+              <span className="w-6 text-center font-bold text-slate-900 text-xs">{qty}</span>
+              <button
+                onClick={() => onQtyChange(service._id, Math.min(10, qty + 1))}
+                className="w-7 h-7 rounded-lg bg-white shadow-sm flex items-center justify-center text-slate-700 hover:bg-slate-50 active:scale-95 transition-transform"
+              >
+                <Plus size={13} />
+              </button>
+            </div>
           </div>
 
           {/* Book Now button */}
           <button
             onClick={() => onBook(service, qty)}
-            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98]"
+            className="flex-1 max-w-[170px] py-2.5 rounded-xl font-bold text-xs text-white flex items-center justify-center gap-1.5 shadow-md transition-all hover:opacity-90 active:scale-[0.98]"
             style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)` }}
           >
-            <Zap size={15} /> Book Now
+            <Zap size={14} /> Book Now
           </button>
         </div>
       </div>
@@ -245,9 +252,9 @@ export default function CategoryServicesPage() {
     <div className="min-h-screen bg-slate-50">
       <Header />
 
-      {/* Hero banner */}
-      <div className="relative overflow-hidden" style={{ paddingTop: '4rem' }}>
-        <div className="relative h-48 sm:h-56 overflow-hidden">
+      {/* Hero banner - Removed redundant 4rem paddingTop because MobileHeader already renders 65px spacer */}
+      <div className="relative overflow-hidden">
+        <div className="relative h-36 sm:h-44 overflow-hidden">
           {displayHeroImg && (
             <img
               src={displayHeroImg}
