@@ -1288,6 +1288,157 @@ AuditLogSchema.index({ providerId: 1, createdAt: -1 });
 AuditLogSchema.index({ complaintId: 1, createdAt: -1 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// INDIA OPERATIONS COMMAND CENTER — GEOGRAPHIC MODELS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 1. GeoHierarchy — India → State → District → City static lookup
+const GeoHierarchySchema = new mongoose.Schema({
+  type: { type: String, enum: ['country', 'state', 'district', 'city'], required: true, index: true },
+  name: { type: String, required: true, trim: true },
+  code: { type: String, required: true, uppercase: true, unique: true },
+  parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'GeoHierarchy', index: true },
+  parentCode: { type: String, uppercase: true },
+  parentName: { type: String },
+  stateCode: { type: String, uppercase: true, index: true },
+  districtCode: { type: String, uppercase: true, index: true },
+  pincodesServed: [String],
+  isOperational: { type: Boolean, default: false, index: true },
+  coverageLevel: {
+    type: String,
+    enum: ['not_available', 'launching', 'limited', 'active', 'full_coverage'],
+    default: 'not_available',
+  },
+  location: {
+    type: { type: String, enum: ['Point'], default: 'Point' },
+    coordinates: [Number], // [lng, lat] of centroid
+  },
+  population: Number,
+  area_sqkm: Number,
+}, { timestamps: true });
+
+GeoHierarchySchema.index({ location: '2dsphere' });
+GeoHierarchySchema.index({ type: 1, stateCode: 1 });
+GeoHierarchySchema.index({ isOperational: 1, type: 1 });
+
+// 2. OperationalRegion — 289 configurable zones
+const OperationalRegionSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true },
+  code: { type: String, required: true, uppercase: true, unique: true },
+  description: String,
+  type: {
+    type: String,
+    enum: ['country', 'state', 'district', 'city', 'zone'],
+    default: 'zone',
+    index: true,
+  },
+  // Geographic scope
+  stateCode: { type: String, uppercase: true, index: true },
+  stateName: String,
+  districtCode: { type: String, uppercase: true, index: true },
+  districtName: String,
+  cityCode: String,
+  cityName: String,
+  geoIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'GeoHierarchy' }],
+  // Management
+  managerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+  managerName: String,
+  staffIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  // Service config
+  serviceCategories: { type: [String], default: [] },
+  targetProviders: { type: Number, default: 10 },
+  // Status
+  status: {
+    type: String,
+    enum: ['planned', 'active', 'paused', 'closed'],
+    default: 'planned',
+    index: true,
+  },
+  coverageLevel: {
+    type: String,
+    enum: ['not_available', 'launching', 'limited', 'active', 'high_demand', 'full_coverage'],
+    default: 'not_available',
+  },
+  launchDate: Date,
+  closedAt: Date,
+  notes: String,
+  // Metrics cache (refreshed by BullMQ)
+  metrics: {
+    totalProviders: { type: Number, default: 0 },
+    onlineProviders: { type: Number, default: 0 },
+    activeBookings: { type: Number, default: 0 },
+    unassignedBookings: { type: Number, default: 0 },
+    todayRevenue: { type: Number, default: 0 },
+    todayCompleted: { type: Number, default: 0 },
+    avgResponseTime: { type: Number, default: 0 }, // minutes
+    demandSupplyRatio: { type: Number, default: 0 },
+    lastUpdated: Date,
+  },
+}, { timestamps: true });
+
+OperationalRegionSchema.index({ stateCode: 1, status: 1 });
+OperationalRegionSchema.index({ districtCode: 1, status: 1 });
+OperationalRegionSchema.index({ managerId: 1 });
+
+// 3. GeographicAssignment — binds staff accounts to geographic scope
+const GeographicAssignmentSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  role: {
+    type: String,
+    enum: ['super_admin', 'state_manager', 'regional_manager', 'district_manager', 'city_manager', 'ops_staff', 'support_staff', 'finance_staff', 'kyc_staff'],
+    required: true,
+  },
+  scope: {
+    type: String,
+    enum: ['country', 'state', 'district', 'city', 'region'],
+    required: true,
+  },
+  // Geographic boundaries this person can access
+  stateCodes: { type: [String], default: [] },   // empty = all (for super_admin)
+  districtCodes: { type: [String], default: [] },
+  cityCodes: { type: [String], default: [] },
+  regionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'OperationalRegion' }],
+  isActive: { type: Boolean, default: true, index: true },
+  assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  notes: String,
+}, { timestamps: true });
+
+GeographicAssignmentSchema.index({ userId: 1, isActive: 1 });
+GeographicAssignmentSchema.index({ stateCodes: 1, isActive: 1 });
+GeographicAssignmentSchema.index({ districtCodes: 1, isActive: 1 });
+
+// 4. OperationsAlert — smart auto-generated alerts
+const OperationsAlertSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['high_demand', 'provider_shortage', 'unassigned_spike', 'complaint_spike', 'slow_response', 'staff_offline', 'provider_shortage_recruit', 'system'],
+    required: true,
+    index: true,
+  },
+  severity: { type: String, enum: ['info', 'warning', 'critical'], default: 'warning', index: true },
+  // Geographic scope of alert
+  stateCode: { type: String, index: true },
+  stateName: String,
+  districtCode: String,
+  districtName: String,
+  cityCode: String,
+  regionId: { type: mongoose.Schema.Types.ObjectId, ref: 'OperationalRegion' },
+  // Alert content
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  data: mongoose.Schema.Types.Mixed, // snapshot of metrics
+  // Status
+  isRead: { type: Boolean, default: false, index: true },
+  isResolved: { type: Boolean, default: false, index: true },
+  resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  resolvedAt: Date,
+  expiresAt: { type: Date, index: true },
+}, { timestamps: true });
+
+OperationsAlertSchema.index({ isRead: 1, severity: 1, createdAt: -1 });
+OperationsAlertSchema.index({ isResolved: 1, type: 1, createdAt: -1 });
+OperationsAlertSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL auto-delete
+
+// ══════════════════════════════════════════════════════════════════════════════
 // EXPORTS
 // ══════════════════════════════════════════════════════════════════════════════
 module.exports = {
@@ -1317,4 +1468,9 @@ module.exports = {
   InvoiceSettings: mongoose.model('InvoiceSettings', InvoiceSettingsSchema),
   Invoice: mongoose.model('Invoice', InvoiceSchema),
   AuditLog: mongoose.model('AuditLog', AuditLogSchema),
+  // India Operations Command Center
+  GeoHierarchy: mongoose.model('GeoHierarchy', GeoHierarchySchema),
+  OperationalRegion: mongoose.model('OperationalRegion', OperationalRegionSchema),
+  GeographicAssignment: mongoose.model('GeographicAssignment', GeographicAssignmentSchema),
+  OperationsAlert: mongoose.model('OperationsAlert', OperationsAlertSchema),
 };

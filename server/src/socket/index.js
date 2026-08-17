@@ -73,6 +73,9 @@ function initSocket(httpServer) {
       await handleProviderConnect(socket);
     } else if (userRole === 'admin') {
       socket.join('admin');
+      socket.join('admin:ops'); // Ops Command Center room
+    } else if (['manager', 'staff', 'team_leader', 'executive'].includes(userRole)) {
+      socket.join('admin:ops'); // Ops staff see ops events, not full admin
     }
 
     // ── Provider Events ──────────────────────────────────────────────────────────
@@ -337,22 +340,27 @@ function initSocket(httpServer) {
     });
   });
 
-  // ── Admin real-time metrics (broadcast every 30s) ─────────────────────────────
+  // ── Admin + Ops real-time metrics (broadcast every 30s) ─────────────────────────────
   setInterval(async () => {
     const adminSockets = await io.in('admin:dashboard').fetchSockets();
-    if (adminSockets.length === 0) return;
+    const opsSockets = await io.in('admin:ops').fetchSockets();
+    if (adminSockets.length === 0 && opsSockets.length === 0) return;
 
-    const { Booking, Provider } = require('../models');
-    const [activeBookings, onlineProviders] = await Promise.all([
+    const { Booking, Provider, OperationsAlert } = require('../models');
+    const [activeBookings, onlineProviders, unassigned, alertCount] = await Promise.all([
       Booking.countDocuments({ status: { $in: ['pending', 'assigned', 'accepted', 'in_progress'] } }),
       Provider.countDocuments({ isOnline: true }),
+      Booking.countDocuments({ status: 'pending' }),
+      OperationsAlert.countDocuments({ isResolved: false, isRead: false }),
     ]);
 
-    io.to('admin:dashboard').emit('admin:metrics', {
-      activeBookings,
-      onlineProviders,
+    const metrics = {
+      activeBookings, onlineProviders, unassigned, alertCount,
       timestamp: new Date().toISOString(),
-    });
+    };
+
+    io.to('admin:dashboard').emit('admin:metrics', metrics);
+    io.to('admin:ops').emit('ops:live_metrics', metrics);
   }, 30000);
 
   logger.info('Socket.io server initialized');

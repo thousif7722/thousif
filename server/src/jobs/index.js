@@ -142,6 +142,9 @@ function createBookingWorker() {
           return await processCommissionDuesCheck();
         case 'check_complaint_escalations':
           return await processComplaintEscalations();
+        case 'generate_ops_alerts':
+          const { generateSmartAlerts } = require('../modules/operations/operations.routes');
+          return await generateSmartAlerts();
 
         default:
           logger.warn(`Unknown booking job: ${name}`);
@@ -569,6 +572,12 @@ function scheduleRecurringJobs() {
   bookingQueue.add('check_complaint_escalations', {}, {
     repeat: { every: 60 * 60 * 1000 }, // Every 1 hour
     jobId: 'hourly_complaint_escalation_scan',
+  });
+
+  // Operations Smart Alert Engine — run every 5 minutes
+  bookingQueue.add('generate_ops_alerts', {}, {
+    repeat: { every: 5 * 60 * 1000 }, // Every 5 minutes
+    jobId: 'ops_smart_alerts_scan',
   });
 
 }

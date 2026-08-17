@@ -25,6 +25,7 @@ const SIDEBAR_SECTIONS = [
   {
     title: 'OPERATIONS',
     items: [
+      { label: 'India Command Center', path: '/admin/operations', icon: Globe, badge: 'New', permission: 'manage_bookings' },
       { label: 'Live Bookings', path: '/admin/bookings', icon: Briefcase, badge: 'Live', permission: 'manage_bookings' },
       { label: 'Technician Directory', path: '/admin/providers', icon: Shield, permission: 'manage_providers' },
       { label: 'Customer Management', path: '/admin/users', icon: Users, permission: 'manage_users' },

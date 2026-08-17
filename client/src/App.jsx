@@ -53,6 +53,16 @@ const Careers = lazy(() => import('@/pages/public/Careers'));
 const PublicServicePage = lazy(() => import('@/pages/public/PublicServicePage'));
 const GlobalJobAcceptModal = lazy(() => import('@/components/provider/GlobalJobAcceptModal'));
 
+// ── Operations Command Center ───────────────────────────────────────────────
+const OperationsHome      = lazy(() => import('@/pages/admin/operations/OperationsHome'));
+const OpsHeatmap          = lazy(() => import('@/pages/admin/operations/OpsHeatmap'));
+const OperationalRegions  = lazy(() => import('@/pages/admin/operations/OperationalRegions'));
+const OpsStaffAccounts    = lazy(() => import('@/pages/admin/operations/OpsStaffAccounts'));
+const OpsCoverageTable    = lazy(() => import('@/pages/admin/operations/OpsCoverageTable'));
+const OpsAlerts           = lazy(() => import('@/pages/admin/operations/OpsAlerts'));
+const OpsAnalytics        = lazy(() => import('@/pages/admin/operations/OpsAnalytics'));
+const StateDashboard      = lazy(() => import('@/pages/admin/operations/StateDashboard'));
+
 // ── Protected Route wrapper ────────────────────────────────────────────────────
 function ProtectedRoute({ children, allowedRoles, requiredPermission, allowPendingProvider = false }) {
   const user = useSelector(selectUser);
@@ -189,6 +199,16 @@ export default function App() {
         <Route path="/admin/settings/branding" element={<ProtectedRoute allowedRoles={['admin']}><AdminBranding /></ProtectedRoute>} />
         <Route path="/admin/invoice-settings" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminInvoiceSettings /></ProtectedRoute>} />
         <Route path="/admin/settings/invoice" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminInvoiceSettings /></ProtectedRoute>} />
+
+        {/* Operations Command Center */}
+        <Route path="/admin/operations" element={<ProtectedRoute allowedRoles={['admin', 'staff', 'manager']}><OperationsHome /></ProtectedRoute>} />
+        <Route path="/admin/operations/heatmap" element={<ProtectedRoute allowedRoles={['admin', 'staff', 'manager']}><OpsHeatmap /></ProtectedRoute>} />
+        <Route path="/admin/operations/regions" element={<ProtectedRoute allowedRoles={['admin', 'staff', 'manager']}><OperationalRegions /></ProtectedRoute>} />
+        <Route path="/admin/operations/staff" element={<ProtectedRoute allowedRoles={['admin', 'manager']}><OpsStaffAccounts /></ProtectedRoute>} />
+        <Route path="/admin/operations/coverage" element={<ProtectedRoute allowedRoles={['admin', 'staff', 'manager']}><OpsCoverageTable /></ProtectedRoute>} />
+        <Route path="/admin/operations/alerts" element={<ProtectedRoute allowedRoles={['admin', 'staff', 'manager']}><OpsAlerts /></ProtectedRoute>} />
+        <Route path="/admin/operations/compare" element={<ProtectedRoute allowedRoles={['admin', 'staff', 'manager']}><OpsAnalytics /></ProtectedRoute>} />
+        <Route path="/admin/operations/state/:stateCode" element={<ProtectedRoute allowedRoles={['admin', 'staff', 'manager']}><StateDashboard /></ProtectedRoute>} />
 
         <Route path="*" element={<Navigate to={getRoleHome(user)} replace />} />
       </Routes>

@@ -36,6 +36,7 @@ const serviceRoutes = require('./modules/service/service.routes');
 const attendanceRoutes = require('./modules/attendance/attendance.routes');
 const hiringRoutes = require('./modules/hiring/hiring.routes');
 const companyRoutes = require('./modules/company/company.routes');
+const operationsRoutes = require('./modules/operations/operations.routes');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -191,6 +192,7 @@ app.use(`${API}/notifications`, notificationRoutes);
 app.use(`${API}/attendance`, attendanceRoutes);
 app.use(`${API}/admin`, hiringRoutes);  // hiring: /admin/apply, /admin/candidates/*
 app.use(`${API}/company`, companyRoutes);
+app.use(`${API}/operations`, operationsRoutes);
 
 // ── Sentry Error Handler ────────────────────────────────────────────────────────
 Sentry.initErrorHandler(app);
