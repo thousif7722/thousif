@@ -227,6 +227,7 @@ export const apiService = {
   createService: (data) => api.post('/admin/services', data),
   updateService: (id, data) => api.put(`/admin/services/${id}`, data),
   deleteService: (id) => api.delete(`/admin/services/${id}`),
+  uploadServiceImage: (formData) => api.post('/admin/services/upload-image', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   updateSurgePricing: (data) => api.put('/admin/pricing/surge', data),
   refundPayment: (data) => api.post('/payments/refund', data),
   // Admin Complaints

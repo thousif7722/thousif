@@ -382,7 +382,13 @@ export default function BookingForm() {
         {service && (
           <div className="card p-4 mb-6">
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-14 h-14 bg-primary-50 rounded-xl text-3xl flex items-center justify-center shrink-0">{service.icon || '🔧'}</div>
+              <div className="w-16 h-16 bg-primary-50 rounded-2xl text-3xl flex items-center justify-center shrink-0 overflow-hidden relative border border-slate-200">
+                {service.imageUrl || service.image ? (
+                  <img src={service.imageUrl || service.image} alt={service.imageAlt || service.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span>{service.icon || '🔧'}</span>
+                )}
+              </div>
               <div className="flex-1">
                 <h2 className="font-bold text-slate-900">{service.name}</h2>
                 <p className="text-sm text-slate-500">{service.duration} min · ₹{service.basePrice} per unit</p>

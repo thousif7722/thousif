@@ -259,6 +259,9 @@ const ServiceSchema = new mongoose.Schema({
   description: { type: String, required: true },
   icon: String,
   image: String,
+  imageUrl: String,
+  imageAlt: String,
+  imageSource: { type: String, enum: ['upload', 'preset', 'url', 'none'], default: 'none' },
   basePrice: { type: Number, required: true, min: 0 },
   priceType: { type: String, enum: ['fixed', 'hourly', 'quote'], default: 'fixed' },
   duration: { type: Number, default: 60 }, // minutes
@@ -273,6 +276,21 @@ const ServiceSchema = new mongoose.Schema({
   sortOrder: { type: Number, default: 0 },
   popularityScore: { type: Number, default: 0 },
 }, { timestamps: true });
+
+ServiceSchema.pre('save', function (next) {
+  if (this.imageUrl && this.imageUrl.startsWith('data:image')) {
+    return next(new Error('Base64 image storage is strictly forbidden. Images must be stored as S3/CDN URLs.'));
+  }
+  if (this.image && this.image.startsWith('data:image')) {
+    return next(new Error('Base64 image storage is strictly forbidden. Images must be stored as S3/CDN URLs.'));
+  }
+  if (this.imageUrl) {
+    this.image = this.imageUrl;
+  } else if (this.image) {
+    this.imageUrl = this.image;
+  }
+  next();
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // BOOKING MODEL

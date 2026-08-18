@@ -62,10 +62,10 @@ function ServiceCard({ service, qty, onQtyChange, onBook, accentColor }) {
             className="w-24 h-24 rounded-xl shrink-0 flex items-center justify-center text-4xl overflow-hidden relative bg-slate-100"
             style={{ background: `${accentColor}15` }}
           >
-            {service.image ? (
+            {service.imageUrl || service.image ? (
               <img
-                src={service.image}
-                alt={service.name}
+                src={service.imageUrl || service.image}
+                alt={service.imageAlt || service.name}
                 className="w-full h-full object-cover"
                 onError={e => {
                   e.target.style.display = 'none';

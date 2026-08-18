@@ -166,6 +166,11 @@ export default function PublicServicePage() {
           <div className="absolute top-0 right-0 w-72 h-72 bg-primary-600/20 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
 
           <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            {(service.imageUrl || service.image) && (
+              <div className="w-full md:w-48 h-44 rounded-2xl overflow-hidden shrink-0 border border-slate-700/50 shadow-lg">
+                <img src={service.imageUrl || service.image} alt={service.imageAlt || service.name} className="w-full h-full object-cover" />
+              </div>
+            )}
             <div className="space-y-3 flex-1">
               <span className="inline-block bg-primary-500/20 text-primary-300 text-xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider border border-primary-500/30">
                 {service.category}

@@ -42,8 +42,8 @@ export default function ServiceDetail() {
         <div className="relative w-full h-64 sm:h-80 overflow-hidden bg-slate-900">
           {/* Main Service Banner Image (Dynamically added from Admin Panel, or fallback to beautiful placeholder) */}
           <img
-            src={service.image || `/cat_${service.category?.toLowerCase().replace(/\s+/g, '_').replace(/&/g, '')}.png`}
-            alt={service.name}
+            src={service.imageUrl || service.image || `/cat_${service.category?.toLowerCase().replace(/\s+/g, '_').replace(/&/g, '')}.png`}
+            alt={service.imageAlt || service.name}
             className="w-full h-full object-cover opacity-80"
             onError={e => { 
               e.target.onerror = null; 

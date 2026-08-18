@@ -2566,5 +2566,134 @@ router.delete('/settings/branding/:type', authorize('admin'), async (req, res) =
   res.json({ success: true, message: `${type} removed successfully` });
 });
 
+// ── Service Catalog & Service Image Management ───────────────────────────────────
+
+/**
+ * POST /admin/services/upload-image
+ * Direct S3 Service Image Upload handler.
+ * Accepts multipart/form-data with field 'image'.
+ * Uploads file directly to S3 (onewayfix/services/) and returns CDN/S3 URL.
+ * Base64 is NEVER stored in the database.
+ */
+router.post('/services/upload-image', authorize('admin', 'staff'), brandingUpload.single('image'), async (req, res) => {
+  if (!req.file) {
+    throw new AppError('No image file provided. Use field name "image"', 400);
+  }
+
+  const ext = path.extname(req.file.originalname).toLowerCase() || '.png';
+  const timestamp = Math.floor(Date.now() / 1000);
+  const rand = Math.random().toString(36).substring(2, 7);
+  const s3Key = `onewayfix/services/service-${timestamp}-${rand}${ext}`;
+
+  const imageUrl = await s3Service.upload(s3Key, req.file.buffer, req.file.mimetype);
+
+  logger.info(`[ServiceImage] Admin/Staff ${req.userId} uploaded service image → ${s3Key}`);
+
+  res.json({
+    success: true,
+    message: 'Service image uploaded successfully to S3',
+    data: {
+      imageUrl,
+      key: s3Key,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    },
+  });
+});
+
+/**
+ * POST /admin/services
+ * Create a new catalog service
+ */
+router.post('/services', authorize('admin', 'staff'), async (req, res) => {
+  const data = req.body;
+  if (!data.name || !data.category || data.basePrice === undefined) {
+    throw new AppError('Name, category, and basePrice are required', 400);
+  }
+
+  // Ensure image & imageUrl consistency
+  if (data.imageUrl) {
+    if (data.imageUrl.startsWith('data:image')) {
+      throw new AppError('Base64 image storage is forbidden. Please upload image to S3.', 400);
+    }
+    data.image = data.imageUrl;
+  } else if (data.image) {
+    if (data.image.startsWith('data:image')) {
+      throw new AppError('Base64 image storage is forbidden. Please upload image to S3.', 400);
+    }
+    data.imageUrl = data.image;
+  }
+
+  const service = await Service.create(data);
+
+  // Invalidate public service cache
+  try {
+    const keys = await cache.keys('services:*');
+    if (keys && keys.length > 0) {
+      await Promise.all(keys.map(k => cache.del(k)));
+    }
+  } catch (e) {}
+
+  logger.info(`[ServiceCatalog] Created service ${service.name} (${service._id})`);
+  res.status(201).json({ success: true, message: 'Service created successfully', data: service });
+});
+
+/**
+ * PUT /admin/services/:id
+ * Update an existing catalog service
+ */
+router.put('/services/:id', authorize('admin', 'staff'), async (req, res) => {
+  const data = req.body;
+
+  // Ensure image & imageUrl consistency
+  if (data.imageUrl) {
+    if (data.imageUrl.startsWith('data:image')) {
+      throw new AppError('Base64 image storage is forbidden. Please upload image to S3.', 400);
+    }
+    data.image = data.imageUrl;
+  } else if (data.image) {
+    if (data.image.startsWith('data:image')) {
+      throw new AppError('Base64 image storage is forbidden. Please upload image to S3.', 400);
+    }
+    data.imageUrl = data.image;
+  }
+
+  const service = await Service.findByIdAndUpdate(req.params.id, data, { new: true, runValidators: true });
+  if (!service) throw new AppError('Service not found', 404);
+
+  // Invalidate public service cache
+  try {
+    const keys = await cache.keys('services:*');
+    if (keys && keys.length > 0) {
+      await Promise.all(keys.map(k => cache.del(k)));
+    }
+  } catch (e) {}
+
+  logger.info(`[ServiceCatalog] Updated service ${service.name} (${service._id})`);
+  res.json({ success: true, message: 'Service updated successfully', data: service });
+});
+
+/**
+ * DELETE /admin/services/:id
+ * Delete a catalog service
+ */
+router.delete('/services/:id', authorize('admin'), async (req, res) => {
+  const service = await Service.findById(req.params.id);
+  if (!service) throw new AppError('Service not found', 404);
+
+  await Service.findByIdAndDelete(req.params.id);
+
+  // Invalidate public service cache
+  try {
+    const keys = await cache.keys('services:*');
+    if (keys && keys.length > 0) {
+      await Promise.all(keys.map(k => cache.del(k)));
+    }
+  } catch (e) {}
+
+  logger.info(`[ServiceCatalog] Deleted service ${service.name} (${service._id})`);
+  res.json({ success: true, message: 'Service deleted successfully' });
+});
+
 module.exports = router;
 

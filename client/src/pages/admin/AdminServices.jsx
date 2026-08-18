@@ -1,8 +1,61 @@
 import React, { useEffect, useState } from 'react';
 import { apiService } from '@/services/api';
 import Header from '@/components/common/Header';
-import { Plus, Edit2, Trash2, Search, X, Check, EyeOff, ChevronDown, Tag, ShieldCheck } from 'lucide-react';
+import {
+  Plus, Edit2, Trash2, Search, X, Check, EyeOff, ChevronDown, Tag, ShieldCheck,
+  Upload, Image as ImageIcon, Sparkles, RefreshCw, CheckCircle2, AlertCircle, Eye,
+  Link as LinkIcon, Star, Clock, Shield, Camera
+} from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// ── Realistic HD Service Photo Presets ──────────────────────────────────────
+const CATEGORY_REALISTIC_PRESETS = {
+  'AC Repair': [
+    { title: 'AC Installation', alt: 'Technician installing indoor AC unit', url: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC Gas Charging', alt: 'Technician checking outdoor AC unit pressure & gas', url: 'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC PCB Repair', alt: 'Technician soldering & repairing AC circuit board', url: 'https://images.unsplash.com/photo-1597733336794-12d05021d510?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC Deep Cleaning', alt: 'Technician jet foam cleaning AC filter coils', url: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC Water Leakage', alt: 'Technician clearing AC drain line & water tray', url: 'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC Compressor Repair', alt: 'Technician replacing outdoor AC compressor unit', url: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC Fan Motor Repair', alt: 'Technician servicing AC fan blower motor', url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC Uninstallation', alt: 'Technician safely dismantling AC unit', url: 'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC Relocation', alt: 'Technician packing & relocating split AC', url: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80' },
+    { title: 'AC General Service', alt: 'Technician performing routine AC checkup & filter wash', url: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Washing Machine': [
+    { title: 'Front Load Service', alt: 'Technician inspecting front load washing machine drum', url: 'https://images.unsplash.com/photo-1610557892470-55d9e80c0bce?auto=format&fit=crop&w=800&q=80' },
+    { title: 'Top Load Repair', alt: 'Technician fixing top load washing machine motor', url: 'https://images.unsplash.com/photo-1582735689369-4fe89db7114c?auto=format&fit=crop&w=800&q=80' },
+    { title: 'Drain Pump Fix', alt: 'Technician clearing washing machine drain pump filter', url: 'https://images.unsplash.com/photo-1563770660941-20978e870e26?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Fridge & Cooler': [
+    { title: 'Double Door Refrigerator', alt: 'Technician testing fridge cooling & gas pressure', url: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=800&q=80' },
+    { title: 'Compressor Gas Refill', alt: 'Technician charging R600a eco gas in fridge', url: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Cleaning': [
+    { title: 'Full Home Deep Clean', alt: 'Professional cleaning crew with floor scrubber', url: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=800&q=80' },
+    { title: 'Sofa & Upholstery Shampoo', alt: 'Cleaners vacuuming and shampooing luxury sofa', url: 'https://images.unsplash.com/photo-1603712725038-e9334ae8f39f?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Plumbing': [
+    { title: 'Pipe & Sink Leak Fix', alt: 'Plumber using wrench under kitchen sink pipe', url: 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=800&q=80' },
+    { title: 'Tap & Shower Fitting', alt: 'Plumber installing modern chrome bathroom faucet', url: 'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Electrical': [
+    { title: 'Wiring & MCB Repair', alt: 'Electrician working on main circuit breaker panel', url: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=800&q=80' },
+    { title: 'Switchboard & Socket', alt: 'Electrician wiring modular wall switchboard', url: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Pest Control': [
+    { title: 'Cockroach & Ant Spray', alt: 'Pest technician spraying gel & eco spray in kitchen', url: 'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Carpentry': [
+    { title: 'Furniture Assembly & Repair', alt: 'Carpenter assembling wooden cabinet with power drill', url: 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Painting': [
+    { title: 'Interior Room Wall Paint', alt: 'Painter using roller on interior living room wall', url: 'https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=800&q=80' },
+  ],
+  'Salon': [
+    { title: 'Haircut & Styling', alt: 'Stylist blow drying customer hair in salon chair', url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80' },
+  ],
+};
 
 // ── Category → Subcategory map ──────────────────────────────────────────────
 const CATEGORY_OPTIONS = {
@@ -132,10 +185,294 @@ const DEFAULT_CATEGORY_SPARES = {
 
 const PRICE_TYPES = ['fixed', 'hourly', 'quote'];
 
+// ── Live Customer Mobile Card Simulation ──────────────────────────────────────
+function CustomerCardPreview({ form }) {
+  const currentImg = form.imageUrl || form.image;
+  return (
+    <div className="bg-slate-900/5 p-4 rounded-2xl border border-slate-200 space-y-2 mt-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+          <Eye size={12} className="text-primary-600" /> Live Customer Card Preview
+        </span>
+        <span className="text-[10px] text-slate-400">Updates dynamically</span>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-w-sm mx-auto hover:shadow-md transition-all">
+        {/* Card Header Image */}
+        <div className="relative h-36 bg-slate-100 flex items-center justify-center overflow-hidden">
+          {currentImg ? (
+            <img
+              src={currentImg}
+              alt={form.imageAlt || form.name || 'Service thumbnail'}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+              }}
+            />
+          ) : null}
+          <div
+            className={`w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400 p-4 text-center ${currentImg ? 'hidden' : 'flex'}`}
+          >
+            <div className="text-3xl mb-1">{form.icon || '🛠️'}</div>
+            <span className="text-[10px] text-slate-400 font-medium">No realistic image set (icon fallback)</span>
+          </div>
+
+          {/* Badges Overlay */}
+          <div className="absolute top-2 left-2 flex gap-1">
+            <span className="bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+              <Star size={10} className="text-amber-400 fill-amber-400" /> 4.8
+            </span>
+          </div>
+          <div className="absolute top-2 right-2">
+            <span className="bg-emerald-500 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+              <Shield size={10} /> 30-Day Guarantee
+            </span>
+          </div>
+        </div>
+
+        {/* Card Body */}
+        <div className="p-3.5 space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="text-[10px] font-extrabold text-primary-600 bg-primary-50 px-2 py-0.5 rounded-md uppercase">
+                {form.category || 'Category'}
+              </span>
+              <h4 className="font-bold text-slate-800 text-sm mt-1 leading-snug">
+                {form.name || 'Service Title'}
+              </h4>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="text-sm font-extrabold text-slate-900">₹{form.basePrice || '499'}</span>
+              <p className="text-[10px] text-slate-400 capitalize">{form.duration || 60} mins</p>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+            {form.description || 'Verified background-checked technicians for doorstep service.'}
+          </p>
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[11px] text-slate-400 flex items-center gap-1">
+              <Clock size={11} /> Next slot available
+            </span>
+            <button type="button" className="bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-sm">
+              Book Service
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Service Image Upload & Preset Selector Component ──────────────────────────
+function ServiceImageManager({ form, set }) {
+  const [tab, setTab] = useState('preset'); // 'preset' | 'upload' | 'url'
+  const [uploading, setUploading] = useState(false);
+
+  const categoryPresets = CATEGORY_REALISTIC_PRESETS[form.category] || CATEGORY_REALISTIC_PRESETS['AC Repair'] || [];
+  const currentImg = form.imageUrl || form.image;
+
+  async function handleFileUpload(file) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size exceeds 5MB limit');
+      return;
+    }
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!validTypes.includes(file.type)) {
+      toast.error('Please upload a JPG, PNG, or WEBP image file');
+      return;
+    }
+
+    setUploading(true);
+    const toastId = toast.loading('Uploading photo directly to S3…');
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await apiService.uploadServiceImage(formData);
+      const url = res.data.data.imageUrl;
+      set('imageUrl', url);
+      set('image', url);
+      set('imageSource', 'upload');
+      if (!form.imageAlt) set('imageAlt', `${form.name || 'Service'} realistic photo`);
+      toast.success('Image uploaded to S3 successfully!', { id: toastId });
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'S3 Upload failed. Please try again.', { id: toastId });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleFileUpload(file);
+  }
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+            <Camera size={14} className="text-primary-600" /> Service Image Manager
+          </p>
+          <p className="text-xs text-slate-400 mt-0.5">High-definition realistic photo displayed to customers</p>
+        </div>
+        {currentImg && (
+          <button
+            type="button"
+            onClick={() => {
+              set('imageUrl', '');
+              set('image', '');
+              set('imageAlt', '');
+              set('imageSource', 'none');
+              toast('Image removed', { icon: '🗑️' });
+            }}
+            className="text-xs text-red-600 font-bold hover:underline flex items-center gap-1"
+          >
+            <Trash2 size={13} /> Remove Image
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1.5 p-1 bg-slate-200/60 rounded-xl text-xs font-bold">
+        <button
+          type="button"
+          onClick={() => setTab('preset')}
+          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${tab === 'preset' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+        >
+          <Sparkles size={13} className="text-amber-500" /> HD Presets
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('upload')}
+          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${tab === 'upload' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+        >
+          <Upload size={13} className="text-primary-600" /> Upload File (S3)
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('url')}
+          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${tab === 'url' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+        >
+          <LinkIcon size={13} className="text-slate-600" /> Image URL
+        </button>
+      </div>
+
+      {/* Tab Content: Presets */}
+      {tab === 'preset' && (
+        <div className="space-y-3">
+          <p className="text-[11px] text-slate-500">
+            Select a realistic photo preset for <span className="font-bold text-slate-700">{form.category || 'this category'}</span>:
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto pr-1">
+            {categoryPresets.map((preset, idx) => {
+              const isSelected = currentImg === preset.url;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    set('imageUrl', preset.url);
+                    set('image', preset.url);
+                    set('imageAlt', preset.alt);
+                    set('imageSource', 'preset');
+                    toast.success(`Selected "${preset.title}" photo!`);
+                  }}
+                  className={`p-2 rounded-xl border text-left transition-all relative group overflow-hidden ${
+                    isSelected ? 'border-primary-600 bg-primary-50/50 ring-2 ring-primary-500/20' : 'border-slate-200 bg-white hover:border-primary-300'
+                  }`}
+                >
+                  <div className="h-16 rounded-lg bg-slate-100 overflow-hidden mb-1.5 relative">
+                    <img src={preset.url} alt={preset.alt} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    {isSelected && (
+                      <div className="absolute top-1 right-1 bg-primary-600 text-white rounded-full p-0.5 shadow">
+                        <CheckCircle2 size={12} />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] font-bold text-slate-800 leading-tight truncate">{preset.title}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Tab Content: Upload File */}
+      {tab === 'upload' && (
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop}
+          className="border-2 border-dashed border-primary-200 bg-white hover:bg-primary-50/20 rounded-2xl p-6 text-center transition-all cursor-pointer relative"
+        >
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => handleFileUpload(e.target.files?.[0])}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+            disabled={uploading}
+          />
+          <div className="flex flex-col items-center justify-center gap-2">
+            <div className="w-12 h-12 rounded-2xl bg-primary-50 text-primary-600 flex items-center justify-center">
+              {uploading ? <RefreshCw className="animate-spin" size={24} /> : <Upload size={24} />}
+            </div>
+            {uploading ? (
+              <p className="text-xs font-bold text-primary-600 animate-pulse">Uploading photo to AWS S3…</p>
+            ) : (
+              <>
+                <p className="text-xs font-bold text-slate-800">
+                  Drag & Drop service photo here, or <span className="text-primary-600 underline">browse</span>
+                </p>
+                <p className="text-[10px] text-slate-400">Supports JPG, PNG, WEBP (Max 5MB). Stored directly in S3.</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab Content: Direct URL */}
+      {tab === 'url' && (
+        <div className="space-y-2">
+          <input
+            value={currentImg}
+            onChange={(e) => {
+              set('imageUrl', e.target.value);
+              set('image', e.target.value);
+              set('imageSource', 'url');
+            }}
+            placeholder="Paste S3/CDN Image URL (e.g. https://...)"
+            className="input-field text-sm bg-white font-mono"
+          />
+        </div>
+      )}
+
+      {/* Alt Text Input */}
+      {currentImg && (
+        <div className="pt-2 border-t border-slate-200">
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Photo Description (Alt Text for SEO & Accessibility)</label>
+          <input
+            value={form.imageAlt || ''}
+            onChange={(e) => set('imageAlt', e.target.value)}
+            placeholder="e.g. Technician performing AC deep cleaning"
+            className="input-field text-xs bg-white"
+          />
+        </div>
+      )}
+
+      {/* Live Customer Preview */}
+      <CustomerCardPreview form={form} />
+    </div>
+  );
+}
+
 const EMPTY_FORM = {
   name: '', slug: '', category: '', subcategory: '',
   description: '', basePrice: '', duration: 60,
-  priceType: 'fixed', icon: '', image: '', isActive: true,
+  priceType: 'fixed', icon: '', image: '', imageUrl: '', imageAlt: '', imageSource: 'none', isActive: true,
   tags: '', includes: '', excludes: '',
   warrantyDays: 30, plusDiscountPct: 10, minProviderTier: 'any',
   popularityScore: 70, sortOrder: 99,
@@ -417,53 +754,77 @@ export default function AdminServices() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map(svc => (
-              <div key={svc._id} className={`bg-white rounded-2xl border shadow-sm p-5 hover:shadow-md transition flex flex-col ${!svc.isActive ? 'opacity-55 border-dashed' : 'border-slate-200'}`}>
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex gap-3 items-center">
-                    <div className="w-10 h-10 rounded-xl bg-primary-50 text-xl flex items-center justify-center border border-primary-100 shrink-0">
-                      {svc.icon || '🛠️'}
+            {filtered.map(svc => {
+              const cardImg = svc.imageUrl || svc.image;
+              return (
+                <div key={svc._id} className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition flex flex-col overflow-hidden ${!svc.isActive ? 'opacity-55 border-dashed' : 'border-slate-200'}`}>
+                  {/* Card Image Banner */}
+                  {cardImg ? (
+                    <div className="relative h-32 bg-slate-100 overflow-hidden group">
+                      <img src={cardImg} alt={svc.imageAlt || svc.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      <div className="absolute top-2 right-2 flex gap-1">
+                        <span className="bg-slate-900/70 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Camera size={10} /> {svc.imageSource || 'photo'}
+                        </span>
+                      </div>
+                      <div className="absolute bottom-2 left-2">
+                        <span className="bg-white/90 backdrop-blur-md text-slate-800 text-xs px-2 py-0.5 rounded-md font-extrabold shadow-sm">
+                          {svc.icon || '🛠️'}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-slate-800 leading-tight text-sm">{svc.name}</h3>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{svc.category}</span>
-                        {svc.subcategory && (
-                          <span className="text-xs text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full">{svc.subcategory}</span>
+                  ) : null}
+
+                  <div className="p-5 flex-1 flex flex-col">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex gap-3 items-center">
+                        {!cardImg && (
+                          <div className="w-10 h-10 rounded-xl bg-primary-50 text-xl flex items-center justify-center border border-primary-100 shrink-0">
+                            {svc.icon || '🛠️'}
+                          </div>
+                        )}
+                        <div>
+                          <h3 className="font-semibold text-slate-800 leading-tight text-sm">{svc.name}</h3>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{svc.category}</span>
+                            {svc.subcategory && (
+                              <span className="text-xs text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full">{svc.subcategory}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <button onClick={() => openEdit(svc)} className="text-slate-400 hover:text-primary-600 p-1.5 rounded-lg hover:bg-primary-50 transition">
+                          <Edit2 size={14} />
+                        </button>
+                        {svc.isActive && (
+                          <button onClick={() => handleDelete(svc._id)} className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition">
+                            <Trash2 size={14} />
+                          </button>
                         )}
                       </div>
                     </div>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    <button onClick={() => openEdit(svc)} className="text-slate-400 hover:text-primary-600 p-1.5 rounded-lg hover:bg-primary-50 transition">
-                      <Edit2 size={14} />
-                    </button>
-                    {svc.isActive && (
-                      <button onClick={() => handleDelete(svc._id)} className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition">
-                        <Trash2 size={14} />
-                      </button>
+
+                    <p className="text-xs text-slate-500 line-clamp-2 flex-1 mb-3">{svc.description}</p>
+
+                    {svc.includes?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {svc.includes.slice(0, 3).map(inc => (
+                          <span key={inc} className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full">{inc}</span>
+                        ))}
+                        {svc.includes.length > 3 && <span className="text-[10px] text-slate-400">+{svc.includes.length - 3} more</span>}
+                      </div>
                     )}
+
+                    <div className="bg-slate-50 px-3 py-2 rounded-xl flex items-center justify-between text-sm border border-slate-100 mt-auto">
+                      <span className="font-bold text-slate-900">₹{svc.basePrice?.toLocaleString('en-IN')}</span>
+                      <span className="text-slate-400 text-xs capitalize">{svc.priceType} · {svc.duration}m</span>
+                      {!svc.isActive && <EyeOff size={13} className="text-red-400 ml-1" title="Inactive" />}
+                    </div>
                   </div>
                 </div>
-
-                <p className="text-xs text-slate-500 line-clamp-2 flex-1 mb-3">{svc.description}</p>
-
-                {svc.includes?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {svc.includes.slice(0, 3).map(inc => (
-                      <span key={inc} className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full">{inc}</span>
-                    ))}
-                    {svc.includes.length > 3 && <span className="text-[10px] text-slate-400">+{svc.includes.length - 3} more</span>}
-                  </div>
-                )}
-
-                <div className="bg-slate-50 px-3 py-2 rounded-xl flex items-center justify-between text-sm border border-slate-100 mt-auto">
-                  <span className="font-bold text-slate-900">₹{svc.basePrice?.toLocaleString('en-IN')}</span>
-                  <span className="text-slate-400 text-xs capitalize">{svc.priceType} · {svc.duration}m</span>
-                  {!svc.isActive && <EyeOff size={13} className="text-red-400 ml-1" title="Inactive" />}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -530,7 +891,7 @@ export default function AdminServices() {
                 </div>
               </div>
 
-              {/* ── Step 2: Name, Slug, Icon ── */}
+              {/* ── Step 2: Name & Slug ── */}
               <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Step 2 — Name & Identity</p>
                 <div className="grid grid-cols-3 gap-3">
@@ -558,19 +919,13 @@ export default function AdminServices() {
                   <input
                     required value={form.slug}
                     onChange={e => set('slug', e.target.value)}
-                    className="input-field text-sm font-mono bg-white mb-3"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Service Card Image URL (Optional)</label>
-                  <input
-                    value={form.image}
-                    onChange={e => set('image', e.target.value)}
-                    className="input-field text-sm bg-white"
-                    placeholder="https://images.unsplash.com/... or Base64 Image URL"
+                    className="input-field text-sm font-mono bg-white"
                   />
                 </div>
               </div>
+
+              {/* ── Step 3: Realistic Image Uploader & Live Card Preview ── */}
+              <ServiceImageManager form={form} set={set} />
 
               {/* ── Step 3: Description ── */}
               <div>
