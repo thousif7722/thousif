@@ -193,8 +193,8 @@ export default function App() {
         <Route path="/admin/bookings" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_bookings"><AdminBookings /></ProtectedRoute>} />
         <Route path="/admin/financials" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminFinancials /></ProtectedRoute>} />
         <Route path="/admin/services" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_services"><AdminServices /></ProtectedRoute>} />
-        <Route path="/admin/service-types" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_services"><AdminServiceTypes /></ProtectedRoute>} />
-        <Route path="/admin/settings/service-types" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_services"><AdminServiceTypes /></ProtectedRoute>} />
+        <Route path="/admin/service-types" element={<Navigate to="/admin/services" replace />} />
+        <Route path="/admin/settings/service-types" element={<Navigate to="/admin/services" replace />} />
         <Route path="/admin/complaints" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_complaints"><AdminComplaints /></ProtectedRoute>} />
         <Route path="/admin/team" element={<ProtectedRoute allowedRoles={['admin']}><AdminTeam /></ProtectedRoute>} />
         <Route path="/admin/announcements" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_announcements"><AdminAnnouncements /></ProtectedRoute>} />

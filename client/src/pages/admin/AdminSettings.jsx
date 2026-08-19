@@ -370,21 +370,21 @@ export default function AdminSettings() {
           </a>
 
           <a
-            href="/admin/settings/service-types"
+            href="/admin/services"
             className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-3xl p-5 shadow-sm hover:shadow-md transition-all border border-indigo-800 flex flex-col justify-between group"
           >
             <div className="flex items-center justify-between">
               <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold">
                 <Layers size={20} />
               </div>
-              <span className="text-[10px] font-extrabold bg-indigo-400 text-slate-950 px-2.5 py-0.5 rounded-full uppercase">Hierarchy</span>
+              <span className="text-[10px] font-extrabold bg-indigo-400 text-slate-950 px-2.5 py-0.5 rounded-full uppercase">Unified Catalog</span>
             </div>
             <div className="mt-4">
-              <h3 className="font-extrabold text-base text-white group-hover:text-indigo-300 transition-colors">Categories & Service Types</h3>
-              <p className="text-xs text-indigo-200 mt-1">Manage main categories (AC, RO, etc.) & 24+ service types</p>
+              <h3 className="font-extrabold text-base text-white group-hover:text-indigo-300 transition-colors">Service Catalog & Hierarchy</h3>
+              <p className="text-xs text-indigo-200 mt-1">Manage 21 Categories, Service Types & Bookable Services</p>
             </div>
             <span className="text-xs font-bold text-indigo-300 mt-3 inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-              Manage Hierarchy →
+              Manage Catalog →
             </span>
           </a>
 
