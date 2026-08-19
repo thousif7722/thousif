@@ -504,6 +504,7 @@ function slugify(str) {
 }
 
 export default function AdminServices() {
+  const [activeTab, setActiveTab] = useState('services'); // 'services' | 'categories' | 'types'
   const [services, setServices] = useState([]);
   const [categoryMap, setCategoryMap] = useState(CATEGORY_OPTIONS);
   const [loading, setLoading] = useState(true);
@@ -520,6 +521,7 @@ export default function AdminServices() {
   const [catForm, setCatForm] = useState({ name: '', icon: '✨', subcategories: '' });
 
   const [dbCategoriesList, setDbCategoriesList] = useState([]);
+  const [dbServiceTypesList, setDbServiceTypesList] = useState([]);
 
   const load = async () => {
     setLoading(true);
@@ -536,6 +538,7 @@ export default function AdminServices() {
 
       setServices(list);
       setDbCategoriesList(catsList);
+      setDbServiceTypesList(typesList);
 
       // Build dynamic categoryMap from DB
       const nextMap = { ...CATEGORY_OPTIONS };
@@ -751,8 +754,8 @@ export default function AdminServices() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Manage Services</h1>
-            <p className="text-slate-500 text-sm mt-1">{services.length} services across {Object.keys(categoryMap).length} categories</p>
+            <h1 className="text-2xl font-bold text-slate-900">Manage Service Catalog</h1>
+            <p className="text-slate-500 text-sm mt-1">Central control for 21 Categories, Service Types, and Bookable Services</p>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={openAddCategory} className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-sm text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-2 transition-all">
@@ -764,110 +767,225 @@ export default function AdminServices() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 flex-1 shadow-sm">
-            <Search size={16} className="text-slate-400 shrink-0" />
-            <input
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search services…"
-              className="flex-1 outline-none text-sm text-slate-800 bg-transparent"
-            />
-            {search && <button onClick={() => setSearch('')}><X size={14} className="text-slate-400" /></button>}
-          </div>
-          <select
-            value={filterCat} onChange={e => setFilterCat(e.target.value)}
-            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 shadow-sm outline-none cursor-pointer"
+        {/* Top Control Tabs */}
+        <div className="flex items-center gap-2 p-1.5 bg-slate-200/70 rounded-2xl mb-6 max-w-xl">
+          <button
+            onClick={() => setActiveTab('services')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+              activeTab === 'services'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
-            <option value="">All Categories</option>
-            {Object.keys(categoryMap).map(c => (
-              <option key={c} value={c}>{categoryMap[c].icon} {c}</option>
-            ))}
-          </select>
+            🛠️ Bookable Services ({services.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('categories')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+              activeTab === 'categories'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            📁 Categories ({dbCategoriesList.length || Object.keys(categoryMap).length})
+          </button>
+          <button
+            onClick={() => setActiveTab('types')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+              activeTab === 'types'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            🗂️ Service Types ({dbServiceTypesList.length})
+          </button>
         </div>
 
-        {/* Services grid */}
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 animate-pulse h-44" />
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center bg-white p-10 rounded-2xl border border-slate-200">
-            <div className="text-5xl mb-3">🛠️</div>
-            <h2 className="text-lg font-semibold text-slate-800">No services found</h2>
-            <button onClick={openAdd} className="btn-primary mt-4 inline-flex gap-2"><Plus size={16} /> Add Service</button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map(svc => {
-              const cardImg = svc.imageUrl || svc.image;
-              return (
-                <div key={svc._id} className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition flex flex-col overflow-hidden ${!svc.isActive ? 'opacity-55 border-dashed' : 'border-slate-200'}`}>
-                  {/* Card Image Banner */}
-                  {cardImg ? (
-                    <div className="relative h-32 bg-slate-100 overflow-hidden group">
-                      <img src={cardImg} alt={svc.imageAlt || svc.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                      <div className="absolute top-2 right-2 flex gap-1">
-                        <span className="bg-slate-900/70 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <Camera size={10} /> {svc.imageSource || 'photo'}
-                        </span>
-                      </div>
-                      <div className="absolute bottom-2 left-2">
-                        <span className="bg-white/90 backdrop-blur-md text-slate-800 text-xs px-2 py-0.5 rounded-md font-extrabold shadow-sm">
-                          {svc.icon || '🛠️'}
-                        </span>
-                      </div>
-                    </div>
-                  ) : null}
+        {/* ── Bookable Services Tab ── */}
+        {activeTab === 'services' && (
+          <>
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-6">
+              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 flex-1 shadow-sm">
+                <Search size={16} className="text-slate-400 shrink-0" />
+                <input
+                  value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search services…"
+                  className="flex-1 outline-none text-sm text-slate-800 bg-transparent"
+                />
+                {search && <button onClick={() => setSearch('')}><X size={14} className="text-slate-400" /></button>}
+              </div>
+              <select
+                value={filterCat} onChange={e => setFilterCat(e.target.value)}
+                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 shadow-sm outline-none cursor-pointer"
+              >
+                <option value="">All Categories</option>
+                {Object.keys(categoryMap).map(c => (
+                  <option key={c} value={c}>{categoryMap[c].icon} {c}</option>
+                ))}
+              </select>
+            </div>
 
-                  <div className="p-5 flex-1 flex flex-col">
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex gap-3 items-center">
-                        {!cardImg && (
-                          <div className="w-10 h-10 rounded-xl bg-primary-50 text-xl flex items-center justify-center border border-primary-100 shrink-0">
-                            {svc.icon || '🛠️'}
+            {/* Services grid */}
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 animate-pulse h-44" />
+                ))}
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="text-center bg-white p-10 rounded-2xl border border-slate-200">
+                <div className="text-5xl mb-3">🛠️</div>
+                <h2 className="text-lg font-semibold text-slate-800">No services found</h2>
+                <button onClick={openAdd} className="btn-primary mt-4 inline-flex gap-2"><Plus size={16} /> Add Service</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filtered.map(svc => {
+                  const cardImg = svc.imageUrl || svc.image;
+                  return (
+                    <div key={svc._id} className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition flex flex-col overflow-hidden ${!svc.isActive ? 'opacity-55 border-dashed' : 'border-slate-200'}`}>
+                      {/* Card Image Banner */}
+                      {cardImg ? (
+                        <div className="relative h-32 bg-slate-100 overflow-hidden group">
+                          <img src={cardImg} alt={svc.imageAlt || svc.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          <div className="absolute top-2 right-2 flex gap-1">
+                            <span className="bg-slate-900/70 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <Camera size={10} /> {svc.imageSource || 'photo'}
+                            </span>
                           </div>
-                        )}
-                        <div>
-                          <h3 className="font-semibold text-slate-800 leading-tight text-sm">{svc.name}</h3>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{svc.category}</span>
-                            {svc.subcategory && (
-                              <span className="text-xs text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full">{svc.subcategory}</span>
+                          <div className="absolute bottom-2 left-2">
+                            <span className="bg-white/90 backdrop-blur-md text-slate-800 text-xs px-2 py-0.5 rounded-md font-extrabold shadow-sm">
+                              {svc.icon || '🛠️'}
+                            </span>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="p-5 flex-1 flex flex-col">
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="flex gap-3 items-center">
+                            {!cardImg && (
+                              <div className="w-10 h-10 rounded-xl bg-primary-50 text-xl flex items-center justify-center border border-primary-100 shrink-0">
+                                {svc.icon || '🛠️'}
+                              </div>
+                            )}
+                            <div>
+                              <h3 className="font-semibold text-slate-800 leading-tight text-sm">{svc.name}</h3>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{svc.category}</span>
+                                {svc.subcategory && (
+                                  <span className="text-xs text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full">{svc.subcategory}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <button onClick={() => openEdit(svc)} className="text-slate-400 hover:text-primary-600 p-1.5 rounded-lg hover:bg-primary-50 transition">
+                              <Edit2 size={14} />
+                            </button>
+                            {svc.isActive && (
+                              <button onClick={() => handleDelete(svc._id)} className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition">
+                                <Trash2 size={14} />
+                              </button>
                             )}
                           </div>
                         </div>
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        <button onClick={() => openEdit(svc)} className="text-slate-400 hover:text-primary-600 p-1.5 rounded-lg hover:bg-primary-50 transition">
-                          <Edit2 size={14} />
-                        </button>
-                        {svc.isActive && (
-                          <button onClick={() => handleDelete(svc._id)} className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition">
-                            <Trash2 size={14} />
-                          </button>
+
+                        <p className="text-xs text-slate-500 line-clamp-2 flex-1 mb-3">{svc.description}</p>
+
+                        {svc.includes?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-3">
+                            {svc.includes.slice(0, 3).map(inc => (
+                              <span key={inc} className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full">{inc}</span>
+                            ))}
+                            {svc.includes.length > 3 && <span className="text-[10px] text-slate-400">+{svc.includes.length - 3} more</span>}
+                          </div>
                         )}
+
+                        <div className="bg-slate-50 px-3 py-2 rounded-xl flex items-center justify-between text-sm border border-slate-100 mt-auto">
+                          <span className="font-bold text-slate-900">₹{svc.basePrice?.toLocaleString('en-IN')}</span>
+                          <span className="text-slate-400 text-xs capitalize">{svc.priceType} · {svc.duration}m</span>
+                          {!svc.isActive && <EyeOff size={13} className="text-red-400 ml-1" title="Inactive" />}
+                        </div>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
 
-                    <p className="text-xs text-slate-500 line-clamp-2 flex-1 mb-3">{svc.description}</p>
-
-                    {svc.includes?.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {svc.includes.slice(0, 3).map(inc => (
-                          <span key={inc} className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-full">{inc}</span>
-                        ))}
-                        {svc.includes.length > 3 && <span className="text-[10px] text-slate-400">+{svc.includes.length - 3} more</span>}
-                      </div>
-                    )}
-
-                    <div className="bg-slate-50 px-3 py-2 rounded-xl flex items-center justify-between text-sm border border-slate-100 mt-auto">
-                      <span className="font-bold text-slate-900">₹{svc.basePrice?.toLocaleString('en-IN')}</span>
-                      <span className="text-slate-400 text-xs capitalize">{svc.priceType} · {svc.duration}m</span>
-                      {!svc.isActive && <EyeOff size={13} className="text-red-400 ml-1" title="Inactive" />}
+        {/* ── Categories Tab ── */}
+        {activeTab === 'categories' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dbCategoriesList.map(cat => (
+              <div key={cat._id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-50 text-2xl flex items-center justify-center border border-amber-100 shrink-0">
+                      {cat.icon || '🛠️'}
                     </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base">{cat.name}</h3>
+                      <p className="text-xs text-slate-400 font-mono mt-0.5">/{cat.slug || slugify(cat.name)}</p>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cat.isActive !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                    {cat.isActive !== false ? 'Active' : 'Disabled'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 line-clamp-2 mb-4">{cat.shortDescription || `Services for ${cat.name}`}</p>
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">
+                    {services.filter(s => s.category === cat.name).length} Services
+                  </span>
+                  <button
+                    onClick={() => {
+                      setCatForm({ name: cat.name, icon: cat.icon || '✨', subcategories: (categoryMap[cat.name]?.subcategories || []).join(', ') });
+                      setIsCatModalOpen(true);
+                    }}
+                    className="text-xs font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 bg-primary-50 px-2.5 py-1 rounded-lg"
+                  >
+                    <Edit2 size={12} /> Edit Category
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Service Types Tab ── */}
+        {activeTab === 'types' && (
+          <div className="space-y-6">
+            {Object.keys(categoryMap).map(catName => {
+              const types = dbServiceTypesList.filter(t => (t.categoryId?.name || t.categoryName) === catName || categoryMap[catName]?.subcategories?.includes(t.name));
+              const subList = categoryMap[catName]?.subcategories || [];
+
+              return (
+                <div key={catName} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{categoryMap[catName]?.icon || '🛠️'}</span>
+                      <h2 className="font-extrabold text-slate-900 text-lg">{catName}</h2>
+                      <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-bold">
+                        {subList.length} Types
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {subList.map((typeStr, idx) => (
+                      <div key={typeStr} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold text-slate-400">#{idx + 1}</span>
+                          <span className="text-xs font-bold text-slate-800">{typeStr}</span>
+                        </div>
+                        <span className="text-[10px] text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full font-semibold">
+                          {services.filter(s => s.category === catName && s.subcategory === typeStr).length} services
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
