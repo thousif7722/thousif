@@ -57,47 +57,91 @@ const CATEGORY_REALISTIC_PRESETS = {
   ],
 };
 
-// ── Category → Subcategory map ──────────────────────────────────────────────
+// ── Category → Subcategory map (Canonical 21 Categories) ──────────────────────────────
 const CATEGORY_OPTIONS = {
-  'AC Repair': {
+  'AC Repair & Services': {
     icon: '❄️',
-    subcategories: ['Normal Service', 'Deep Clean', 'Gas Charging', 'Installation', 'Uninstallation', 'PCB Repair', 'Compressor Repair'],
+    subcategories: ['Normal AC Service', 'AC Deep Cleaning', 'AC Gas Charging', 'AC Installation & Removal'],
   },
-  'Washing Machine': {
+  'Washing Machine Repair': {
     icon: '🫧',
-    subcategories: ['Normal Service', 'Deep Clean', 'Repair', 'Installation', 'Drum Cleaning', 'Uninstallation'],
+    subcategories: ['Front Load Repair', 'Top Load & Semi-Auto Repair'],
   },
-  'Fridge & Cooler': {
+  'Refrigerator Repair': {
     icon: '🧊',
-    subcategories: ['Normal Service', 'Gas Refill', 'Repair', 'Deep Clean', 'Installation', 'Thermostat Repair'],
+    subcategories: ['Single & Double Door Repair', 'Fridge Gas Refill & Compressor'],
   },
-  'Cleaning': {
-    icon: '🧹',
-    subcategories: ['Home Cleaning', 'Deep Clean', 'Bathroom Clean', 'Kitchen Clean', 'Sofa Clean', 'Carpet Clean'],
+  'RO & Water Purifier': {
+    icon: '💧',
+    subcategories: ['RO Filter Change & Service'],
   },
-  'Plumbing': {
-    icon: '🔧',
-    subcategories: ['Pipe Repair', 'Tap Fitting', 'Drainage Clean', 'Water Heater', 'Toilet Repair', 'Tank Cleaning'],
+  'Geyser Repair': {
+    icon: '🔥',
+    subcategories: ['Electric & Gas Geyser Repair'],
   },
-  'Electrical': {
+  'Air Cooler Repair': {
+    icon: '🌬️',
+    subcategories: ['Cooler Servicing & Repairs'],
+  },
+  'Microwave Repair': {
+    icon: '📻',
+    subcategories: ['Microwave Heating & PCB Fix'],
+  },
+  'Television Repair': {
+    icon: '📺',
+    subcategories: ['LED & Smart TV Repairs'],
+  },
+  'Chimney Repair & Cleaning': {
+    icon: '🍳',
+    subcategories: ['Chimney Cleaning & Servicing'],
+  },
+  'Dishwasher Repair': {
+    icon: '🍽️',
+    subcategories: ['Dishwasher Repairs'],
+  },
+  'Electrician Services': {
     icon: '⚡',
-    subcategories: ['Wiring', 'Switch/Socket', 'Fan Installation', 'MCB/Fuse', 'Light Fitting', 'Inverter Setup'],
+    subcategories: ['Switches & Wiring', 'Fan & Light Fitting'],
   },
-  'Pest Control': {
-    icon: '🐛',
-    subcategories: ['Cockroach Treatment', 'Termite Treatment', 'Bed Bugs', 'Ant Control', 'Rodent Control', 'General Pest'],
+  'Plumbing Services': {
+    icon: '🔧',
+    subcategories: ['Tap & Shower Repairs', 'Drainage & Pipe Unclogging'],
   },
-  'Carpentry': {
+  'Carpentry Services': {
     icon: '🪚',
-    subcategories: ['Furniture Repair', 'Door Fitting', 'Wardrobe', 'Shelf Fixing', 'Wood Polish', 'Custom Work'],
+    subcategories: ['Door & Lock Repairs'],
   },
-  'Painting': {
+  'House Painting': {
     icon: '🎨',
-    subcategories: ['Interior Paint', 'Exterior Paint', 'Texture Paint', 'Wall Putty', 'Waterproofing', 'Wood Paint'],
+    subcategories: ['Interior Wall Painting'],
   },
-  'Salon': {
-    icon: '💇',
-    subcategories: ['Haircut', 'Facial', 'Waxing', 'Manicure', 'Pedicure', 'Bridal Package'],
+  'Full Home Deep Cleaning': {
+    icon: '🧹',
+    subcategories: ['Apartment Deep Cleaning'],
+  },
+  'Sofa & Upholstery Cleaning': {
+    icon: '🛋️',
+    subcategories: ['Sofa & Mattress Shampoo'],
+  },
+  'Bathroom Cleaning': {
+    icon: '🧼',
+    subcategories: ['Bathroom Tile & Tap Clean'],
+  },
+  'Pest Control Services': {
+    icon: '🐛',
+    subcategories: ['Cockroach & General Pest'],
+  },
+  'Salon for Women': {
+    icon: '💇‍♀️',
+    subcategories: ['Facial & Waxing Packages'],
+  },
+  'Salon for Men': {
+    icon: '💇‍♂️',
+    subcategories: ['Grooming & Haircut'],
+  },
+  'Spa & Massage': {
+    icon: '🧘',
+    subcategories: ['Body Therapies'],
   },
 };
 

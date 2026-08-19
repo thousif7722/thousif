@@ -11,18 +11,29 @@ import { apiService } from '@/services/api';
 import Header from '@/components/common/Header';
 import toast from 'react-hot-toast';
 
-// ── Category visual map (mirrors CATEGORY_CONFIG in HomePage) ─────────────────
+// ── Category visual map (mirrors canonical 21 categories) ─────────────────
 const CATEGORY_META = {
-  'AC Repair':        { img: '/cat_ac.png',        icon: '❄️',  accent: '#0284c7', light: '#e0f2fe' },
-  'Cleaning':         { img: '/cat_cleaning.png',  icon: '🧹',  accent: '#059669', light: '#d1fae5' },
-  'Washing Machine':  { img: '/cat_washing.png',   icon: '🫧',  accent: '#3b82f6', light: '#eff6ff' },
-  'Fridge & Cooler':  { img: '/cat_fridge.png',    icon: '🧊',  accent: '#0ea5e9', light: '#f0f9ff' },
-  'Plumbing':         { img: '/cat_plumbing.png',  icon: '🔧',  accent: '#475569', light: '#f1f5f9' },
-  'Electrical':       { img: '/cat_electrical.png',icon: '⚡',  accent: '#d97706', light: '#fef3c7' },
-  'Pest Control':     { img: '/cat_pest.png',       icon: '🐛',  accent: '#65a30d', light: '#f0fdf4' },
-  'Carpentry':        { img: '/cat_carpentry.png', icon: '🪚',  accent: '#ea580c', light: '#fff7ed' },
-  'Painting':         { img: '/cat_painting.png',  icon: '🎨',  accent: '#db2777', light: '#fdf2f8' },
-  'Salon':            { img: '/cat_salon.png',      icon: '💇',  accent: '#7c3aed', light: '#f5f3ff' },
+  'AC Repair & Services':        { img: '/cat_ac.png',        icon: '❄️',  accent: '#0284c7', light: '#e0f2fe' },
+  'Washing Machine Repair':     { img: '/cat_washing.png',   icon: '🫧',  accent: '#3b82f6', light: '#eff6ff' },
+  'Refrigerator Repair':        { img: '/cat_fridge.png',    icon: '🧊',  accent: '#0ea5e9', light: '#f0f9ff' },
+  'RO & Water Purifier':        { img: '/cat_ro.png',        icon: '💧',  accent: '#06b6d4', light: '#ecfeff' },
+  'Geyser Repair':              { img: '/cat_geyser.png',    icon: '🔥',  accent: '#ef4444', light: '#fef2f2' },
+  'Air Cooler Repair':          { img: '/cat_cooler.png',    icon: '🌬️',  accent: '#38bdf8', light: '#f0f9ff' },
+  'Microwave Repair':           { img: '/cat_microwave.png', icon: '📻',  accent: '#f59e0b', light: '#fffbeb' },
+  'Television Repair':          { img: '/cat_tv.png',        icon: '📺',  accent: '#6366f1', light: '#eef2ff' },
+  'Chimney Repair & Cleaning':  { img: '/cat_chimney.png',   icon: '🍳',  accent: '#14b8a6', light: '#f0fdfa' },
+  'Dishwasher Repair':          { img: '/cat_dishwasher.png',icon: '🍽️',  accent: '#8b5cf6', light: '#f5f3ff' },
+  'Electrician Services':       { img: '/cat_electrical.png',icon: '⚡',  accent: '#d97706', light: '#fef3c7' },
+  'Plumbing Services':          { img: '/cat_plumbing.png',  icon: '🔧',  accent: '#475569', light: '#f1f5f9' },
+  'Carpentry Services':         { img: '/cat_carpentry.png', icon: '🪚',  accent: '#ea580c', light: '#fff7ed' },
+  'House Painting':             { img: '/cat_painting.png',  icon: '🎨',  accent: '#db2777', light: '#fdf2f8' },
+  'Full Home Deep Cleaning':    { img: '/cat_cleaning.png',  icon: '🧹',  accent: '#059669', light: '#d1fae5' },
+  'Sofa & Upholstery Cleaning': { img: '/cat_sofa.png',      icon: '🛋️',  accent: '#a855f7', light: '#faf5ff' },
+  'Bathroom Cleaning':          { img: '/cat_bathroom.png',  icon: '🧼',  accent: '#0284c7', light: '#e0f2fe' },
+  'Pest Control Services':      { img: '/cat_pest.png',       icon: '🐛',  accent: '#65a30d', light: '#f0fdf4' },
+  'Salon for Women':            { img: '/cat_salon_w.png',   icon: '💇‍♀️', accent: '#ec4899', light: '#fdf2f8' },
+  'Salon for Men':              { img: '/cat_salon_m.png',   icon: '💇‍♂️', accent: '#0284c7', light: '#e0f2fe' },
+  'Spa & Massage':              { img: '/cat_spa.png',       icon: '🧘',  accent: '#14b8a6', light: '#f0fdfa' },
 };
 
 const SORT_OPTIONS = [

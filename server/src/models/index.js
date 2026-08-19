@@ -248,6 +248,7 @@ const CategorySchema = new mongoose.Schema({
   shortDescription: { type: String, trim: true, default: '' },
   status: { type: String, enum: ['active', 'inactive', 'archived'], default: 'active', index: true },
   sortOrder: { type: Number, default: 0 },
+  serviceCount: { type: Number, default: 0 },
   isArchived: { type: Boolean, default: false, index: true },
 }, { timestamps: true });
 

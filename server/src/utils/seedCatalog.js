@@ -526,11 +526,81 @@ const FULL_CATALOG = [
 ];
 
 async function seedCatalog() {
-  logger.info('🚀 Starting Comprehensive OneWayFix Service Catalog Seeder (21 Categories)...');
+  logger.info('🚀 Starting Safe OneWayFix Service Catalog Cleanup & Seeder (21 Canonical Categories)...');
 
-  let totalCategoriesCreated = 0;
-  let totalServiceTypesCreated = 0;
-  let totalServicesCreated = 0;
+  const { Booking } = require('../models');
+
+  const canonicalSlugs = FULL_CATALOG.map(c => c.slug);
+  const canonicalNames = FULL_CATALOG.map(c => c.name);
+
+  // 1. CLEANUP / MIGRATION OF OBSOLETE & DUPLICATE CATEGORIES & SERVICES
+  const existingCategories = await Category.find({});
+  for (const oldCat of existingCategories) {
+    if (!canonicalSlugs.includes(oldCat.slug) && !canonicalNames.includes(oldCat.name)) {
+      const oldServices = await Service.find({
+        $or: [{ categoryId: oldCat._id }, { category: oldCat.name }]
+      });
+
+      for (const oldService of oldServices) {
+        const isReferencedInBooking = await Booking.exists({ serviceId: oldService._id });
+        if (isReferencedInBooking) {
+          oldService.isActive = false;
+          oldService.isArchived = true;
+          await oldService.save();
+          logger.info(` ⚠️ Archived legacy service referenced in booking: ${oldService.name} (${oldService._id})`);
+        } else {
+          await Service.deleteOne({ _id: oldService._id });
+          logger.info(` 🗑️ Removed obsolete service: ${oldService.name}`);
+        }
+      }
+
+      const oldTypes = await ServiceType.find({
+        $or: [{ categoryId: oldCat._id }, { categorySlug: oldCat.slug }]
+      });
+      for (const oldType of oldTypes) {
+        const remainingServicesCount = await Service.countDocuments({ serviceTypeId: oldType._id });
+        if (remainingServicesCount > 0) {
+          oldType.status = 'inactive';
+          oldType.isArchived = true;
+          await oldType.save();
+        } else {
+          await ServiceType.deleteOne({ _id: oldType._id });
+        }
+      }
+
+      const remainingCatServicesCount = await Service.countDocuments({
+        $or: [{ categoryId: oldCat._id }, { category: oldCat.name }]
+      });
+      if (remainingCatServicesCount > 0) {
+        oldCat.status = 'inactive';
+        oldCat.isArchived = true;
+        await oldCat.save();
+        logger.info(` ⚠️ Deactivated legacy category with bookings: ${oldCat.name}`);
+      } else {
+        await Category.deleteOne({ _id: oldCat._id });
+        logger.info(` 🗑️ Removed obsolete category: ${oldCat.name}`);
+      }
+    }
+  }
+
+  // Cleanup orphan obsolete services not matching canonical names
+  const allObsoleteServices = await Service.find({
+    category: { $nin: canonicalNames }
+  });
+  for (const orphanService of allObsoleteServices) {
+    const isReferenced = await Booking.exists({ serviceId: orphanService._id });
+    if (isReferenced) {
+      orphanService.isActive = false;
+      await orphanService.save();
+    } else {
+      await Service.deleteOne({ _id: orphanService._id });
+    }
+  }
+
+  // 2. UPSERT CANONICAL 21 CATEGORIES, SERVICE TYPES & SERVICES
+  let totalCategoriesUpserted = 0;
+  let totalServiceTypesUpserted = 0;
+  let totalServicesUpserted = 0;
 
   for (const catData of FULL_CATALOG) {
     let category = await Category.findOne({
@@ -547,17 +617,21 @@ async function seedCatalog() {
         shortDescription: catData.shortDescription,
         sortOrder: catData.sortOrder,
         status: 'active',
+        isArchived: false,
       });
-      totalCategoriesCreated++;
-      logger.info(`✅ Created Main Category: ${category.name}`);
     } else {
+      category.name = catData.name;
+      category.slug = catData.slug;
       category.icon = catData.icon;
       category.color = catData.color;
       category.image = catData.image;
       category.shortDescription = catData.shortDescription;
       category.sortOrder = catData.sortOrder;
+      category.status = 'active';
+      category.isArchived = false;
       await category.save();
     }
+    totalCategoriesUpserted++;
 
     for (let i = 0; i < catData.serviceTypes.length; i++) {
       const stData = catData.serviceTypes[i];
@@ -579,23 +653,31 @@ async function seedCatalog() {
           description: stData.description || '',
           sortOrder: i + 1,
           status: 'active',
+          isArchived: false,
         });
-        totalServiceTypesCreated++;
-        logger.info(`   └─ Created ServiceType: ${serviceType.name}`);
       } else {
+        serviceType.categoryId = category._id;
+        serviceType.categorySlug = category.slug;
+        serviceType.name = stData.name;
+        serviceType.slug = stSlug;
         serviceType.icon = stData.icon || category.icon;
         serviceType.description = stData.description || serviceType.description;
+        serviceType.status = 'active';
+        serviceType.isArchived = false;
         await serviceType.save();
       }
+      totalServiceTypesUpserted++;
 
-      // Seed Bookable Services under this ServiceType
       if (stData.services && stData.services.length > 0) {
         for (let j = 0; j < stData.services.length; j++) {
           const sData = stData.services[j];
           const sBaseSlug = sData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
           let service = await Service.findOne({
-            $or: [{ slug: sBaseSlug }, { name: sData.name, category: category.name }]
+            $or: [
+              { slug: sBaseSlug },
+              { name: sData.name, category: category.name }
+            ]
           });
 
           const servicePayload = {
@@ -614,7 +696,7 @@ async function seedCatalog() {
             imageAlt: `${sData.name} service photo`,
             imageSource: 'preset',
             gstPct: 18,
-            isEmergencyAvailable: j === 0, // First service in type gets emergency support
+            isEmergencyAvailable: j === 0,
             emergencyCharge: j === 0 ? 299 : 0,
             visitCharge: 99,
             locationAvailability: 'all',
@@ -638,19 +720,59 @@ async function seedCatalog() {
 
           if (!service) {
             await Service.create(servicePayload);
-            totalServicesCreated++;
-            logger.info(`        └─ Created Service: ${sData.name} (₹${sData.basePrice})`);
           } else {
             Object.assign(service, servicePayload);
             await service.save();
           }
+          totalServicesUpserted++;
         }
       }
     }
+
+    const activeServiceCount = await Service.countDocuments({
+      categoryId: category._id,
+      isActive: true
+    });
+    category.serviceCount = activeServiceCount;
+    await category.save();
   }
 
-  logger.info(`🎉 Catalog Seeding Complete!`);
-  logger.info(`Summary: ${totalCategoriesCreated} new Categories, ${totalServiceTypesCreated} new ServiceTypes, ${totalServicesCreated} new Services created.`);
+  // 3. VALIDATION SUMMARY
+  const activeCategories = await Category.find({ status: 'active', isArchived: { $ne: true } }).sort({ sortOrder: 1 });
+  const activeServiceTypes = await ServiceType.find({ status: 'active', isArchived: { $ne: true } });
+  const activeServices = await Service.find({ isActive: true });
+
+  const catSlugs = activeCategories.map(c => c.slug);
+  const duplicateCategoriesCount = catSlugs.length - new Set(catSlugs).size;
+
+  const stSlugs = activeServiceTypes.map(st => st.slug);
+  const duplicateServiceTypesCount = stSlugs.length - new Set(stSlugs).size;
+
+  const sSlugs = activeServices.map(s => s.slug);
+  const duplicateServicesCount = sSlugs.length - new Set(sSlugs).size;
+
+  console.log('\n========================================');
+  console.log('ONEWAYFIX CATALOG VALIDATION');
+  console.log('========================================');
+  console.log(`Categories: ${activeCategories.length}`);
+  console.log(`Service Types: ${activeServiceTypes.length}`);
+  console.log(`Bookable Services: ${activeServices.length}\n`);
+  console.log('Active Categories:');
+  activeCategories.forEach((c, idx) => {
+    console.log(`${idx + 1}. ${c.name}`);
+  });
+  console.log(`\nDuplicate Categories: ${duplicateCategoriesCount}`);
+  console.log(`Duplicate Service Types: ${duplicateServiceTypesCount}`);
+  console.log(`Duplicate Services: ${duplicateServicesCount}`);
+  console.log('========================================');
+
+  if (activeCategories.length !== 21) {
+    console.error(`❌ CATALOG SEED FAILURE: Expected 21 active categories, found ${activeCategories.length}`);
+    throw new Error(`Catalog validation failed: active categories count is ${activeCategories.length}`);
+  }
+
+  console.log('CATALOG SEED SUCCESS');
+  console.log('========================================\n');
 }
 
 module.exports = { seedCatalog };
