@@ -767,42 +767,7 @@ export default function AdminServices() {
           </div>
         </div>
 
-        {/* Top Control Tabs */}
-        <div className="flex items-center gap-2 p-1.5 bg-slate-200/70 rounded-2xl mb-6 max-w-xl">
-          <button
-            onClick={() => setActiveTab('services')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
-              activeTab === 'services'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            🛠️ Bookable Services ({services.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('categories')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
-              activeTab === 'categories'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            📁 Categories ({dbCategoriesList.length || Object.keys(categoryMap).length})
-          </button>
-          <button
-            onClick={() => setActiveTab('types')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
-              activeTab === 'types'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            🗂️ Service Types ({dbServiceTypesList.length})
-          </button>
-        </div>
-
-        {/* ── Bookable Services Tab ── */}
-        {activeTab === 'services' && (
+        {/* Bookable Services Section */}
           <>
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
@@ -915,83 +880,6 @@ export default function AdminServices() {
               </div>
             )}
           </>
-        )}
-
-        {/* ── Categories Tab ── */}
-        {activeTab === 'categories' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {dbCategoriesList.map(cat => (
-              <div key={cat._id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-amber-50 text-2xl flex items-center justify-center border border-amber-100 shrink-0">
-                      {cat.icon || '🛠️'}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-base">{cat.name}</h3>
-                      <p className="text-xs text-slate-400 font-mono mt-0.5">/{cat.slug || slugify(cat.name)}</p>
-                    </div>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cat.isActive !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                    {cat.isActive !== false ? 'Active' : 'Disabled'}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 line-clamp-2 mb-4">{cat.shortDescription || `Services for ${cat.name}`}</p>
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-600">
-                    {services.filter(s => s.category === cat.name).length} Services
-                  </span>
-                  <button
-                    onClick={() => {
-                      setCatForm({ name: cat.name, icon: cat.icon || '✨', subcategories: (categoryMap[cat.name]?.subcategories || []).join(', ') });
-                      setIsCatModalOpen(true);
-                    }}
-                    className="text-xs font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 bg-primary-50 px-2.5 py-1 rounded-lg"
-                  >
-                    <Edit2 size={12} /> Edit Category
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── Service Types Tab ── */}
-        {activeTab === 'types' && (
-          <div className="space-y-6">
-            {Object.keys(categoryMap).map(catName => {
-              const types = dbServiceTypesList.filter(t => (t.categoryId?.name || t.categoryName) === catName || categoryMap[catName]?.subcategories?.includes(t.name));
-              const subList = categoryMap[catName]?.subcategories || [];
-
-              return (
-                <div key={catName} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{categoryMap[catName]?.icon || '🛠️'}</span>
-                      <h2 className="font-extrabold text-slate-900 text-lg">{catName}</h2>
-                      <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-bold">
-                        {subList.length} Types
-                      </span>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    {subList.map((typeStr, idx) => (
-                      <div key={typeStr} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono font-bold text-slate-400">#{idx + 1}</span>
-                          <span className="text-xs font-bold text-slate-800">{typeStr}</span>
-                        </div>
-                        <span className="text-[10px] text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full font-semibold">
-                          {services.filter(s => s.category === catName && s.subcategory === typeStr).length} services
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       {/* ── Add / Edit Modal ─────────────────────────────────────────────────── */}
