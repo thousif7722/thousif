@@ -70,8 +70,10 @@ export default function DesktopHeader() {
   const notifRef = useRef(null);
   const locRef = useRef(null);
 
+  const isProviderRoute = location.pathname.startsWith('/provider');
+  const isAdminRoute = location.pathname.startsWith('/admin');
   const role = user?.role || 'customer';
-  let links = NAV_LINKS[role] || NAV_LINKS.customer;
+  let links = isProviderRoute ? NAV_LINKS.provider : NAV_LINKS.customer;
 
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   const moreToolsRef = useRef(null);
@@ -333,7 +335,7 @@ export default function DesktopHeader() {
               </div>
             )}
           </div>
-          {user?.role === 'provider' && (
+          {(user?.role === 'provider' || user?.isProvider || user?.providerStatus === 'approved') && (
             <button
               onClick={() => {
                 if (location.pathname.startsWith('/provider')) {

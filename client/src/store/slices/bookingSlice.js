@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 
 export const fetchMyBookings = createAsyncThunk('booking/fetchMine', async (params = {}, { rejectWithValue }) => {
   try {
-    const res = await api.get('/bookings', { params });
+    const res = await api.get('/bookings', { params: { view: 'customer', ...params } });
     return res.data;
   } catch (err) { return rejectWithValue(err.response?.data?.error); }
 });

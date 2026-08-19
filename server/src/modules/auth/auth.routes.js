@@ -831,11 +831,12 @@ async function authenticate(req, res, next) {
 
 function authorize(...roles) {
   return (req, res, next) => {
-    // If route specifies 'provider', user MUST have role 'provider' or be approved provider or admin/staff
+    // Both 'customer' and 'provider' roles can access customer routes!
     const isAllowed = roles.includes(req.userRole) ||
+                      (roles.includes('customer') && (req.userRole === 'provider' || req.userRole === 'customer')) ||
                       (roles.includes('provider') && (req.userRole === 'provider' || req.isProvider));
     if (!isAllowed) {
-      return next(new AppError('You are not authorized to access provider features.', 403));
+      return next(new AppError('You are not authorized to access this feature.', 403));
     }
     next();
   };

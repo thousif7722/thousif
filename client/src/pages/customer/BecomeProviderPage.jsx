@@ -42,6 +42,56 @@ export default function BecomeProviderPage() {
           transition={{ duration: 0.4 }}
           className="bg-white rounded-3xl p-6 sm:p-10 shadow-xl border border-slate-100"
         >
+          {user?.role === 'provider' || user?.providerStatus === 'approved' ? (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-3xl p-8 text-center max-w-xl mx-auto shadow-sm">
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl font-extrabold shadow-inner">
+                🎉
+              </div>
+              <h2 className="text-2xl font-extrabold text-slate-900 mb-2">You are an Approved Partner!</h2>
+              <p className="text-slate-600 text-sm mb-6 leading-relaxed">
+                Your account has full Service Provider privileges enabled. Your Customer account functionality remains completely intact—you can book services as a customer anytime, or switch to your Partner Dashboard to accept incoming jobs.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  onClick={() => navigate('/provider')}
+                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-2xl shadow-md transition-all text-sm flex items-center justify-center gap-2"
+                >
+                  <span>⚡ Go to Provider Dashboard</span>
+                </button>
+                <button
+                  onClick={() => navigate('/')}
+                  className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 py-3 rounded-2xl transition-all text-sm"
+                >
+                  <span>🛒 Browse Services as Customer</span>
+                </button>
+              </div>
+            </div>
+          ) : user?.providerApplicationStatus === 'pending' ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-3xl p-8 text-center max-w-xl mx-auto shadow-sm">
+              <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl font-extrabold shadow-inner">
+                ⏳
+              </div>
+              <h2 className="text-2xl font-extrabold text-slate-900 mb-2">Application Under Review</h2>
+              <p className="text-slate-600 text-sm mb-6 leading-relaxed">
+                Your Partner Application has been submitted and is currently being verified by our onboarding team. Your Customer account remains <strong>100% active</strong> and unchanged while we review your details.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  onClick={() => navigate('/provider/pending')}
+                  className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white font-bold px-6 py-3 rounded-2xl shadow-md transition-all text-sm flex items-center justify-center gap-2"
+                >
+                  <span>📋 View Application Status</span>
+                </button>
+                <button
+                  onClick={() => navigate('/')}
+                  className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 py-3 rounded-2xl transition-all text-sm"
+                >
+                  <span>🛒 Continue as Customer</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
           {/* Header Banner */}
           <div className="text-center max-w-2xl mx-auto mb-10">
             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 font-bold text-2xl shadow-sm">
@@ -141,6 +191,8 @@ export default function BecomeProviderPage() {
               {loading ? 'Initiating Application…' : 'Start Provider Application'} <ArrowRight size={18} />
             </button>
           </div>
+          </>
+          )}
         </motion.div>
       </main>
 

@@ -40,7 +40,8 @@ export default function MobileDrawer({ isOpen, onClose }) {
     navigate('/login');
   }
 
-  const isCustomer = user?.role === 'customer';
+  const isProviderRoute = location.pathname.startsWith('/provider');
+  const isCustomer = !isProviderRoute;
 
   const menuItems = isCustomer ? [
     { to: '/', label: 'Home', icon: Home },
@@ -158,7 +159,7 @@ export default function MobileDrawer({ isOpen, onClose }) {
           )}
 
           {/* Role Switcher for Approved Providers */}
-          {user?.role === 'provider' && (
+          {(user?.role === 'provider' || user?.isProvider || user?.providerStatus === 'approved') && (
             <div className="px-5 pt-3 pb-1">
               <button
                 onClick={() => {

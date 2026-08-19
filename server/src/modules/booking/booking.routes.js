@@ -76,8 +76,15 @@ router.get('/', authenticate, async (req, res) => {
   const skip = (page - 1) * limit;
 
   let filter = {};
-  if (req.userRole === 'customer') filter.customerId = req.userId;
-  else if (req.userRole === 'provider') filter.providerId = req.userId;
+  if (req.query.view === 'customer' || req.query.role === 'customer') {
+    filter.customerId = req.userId;
+  } else if (req.query.view === 'provider' || req.query.role === 'provider') {
+    filter.providerId = req.userId;
+  } else if (req.userRole === 'customer') {
+    filter.customerId = req.userId;
+  } else if (req.userRole === 'provider') {
+    filter.providerId = req.userId;
+  }
 
   if (status) {
     const statusList = status.split(',').map(s => s.trim()).filter(Boolean);
