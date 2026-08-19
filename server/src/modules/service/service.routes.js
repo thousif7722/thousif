@@ -54,12 +54,15 @@ router.get('/', async (req, res) => {
 
 /**
  * GET /services/categories
- * Returns rich category list with image, icon, color, and service count
+ * Returns rich category list from Category model with service counts
  */
 router.get('/categories', async (req, res) => {
-  const cacheKey = 'service:categories:rich';
+  const cacheKey = 'service:categories:rich:v2';
   const cached = await cache.get(cacheKey);
   if (cached) return res.json({ success: true, data: cached });
+
+  const { Category } = require('../../models');
+  let dbCategories = await Category.find({ status: 'active', isArchived: false }).sort({ sortOrder: 1 }).lean();
 
   // Aggregate service count per category
   const counts = await Service.aggregate([
@@ -68,29 +71,86 @@ router.get('/categories', async (req, res) => {
   ]);
   const countMap = Object.fromEntries(counts.map(c => [c._id, c.count]));
 
-  // Merge default CATEGORY_META keys with DB categories
+  if (dbCategories && dbCategories.length > 0) {
+    const formatted = dbCategories.map(cat => ({
+      _id: cat._id,
+      name: cat.name,
+      slug: cat.slug,
+      icon: cat.icon || '🛠️',
+      img: cat.image || CATEGORY_META[cat.name]?.img || '/cat_ac.png',
+      color: cat.color || CATEGORY_META[cat.name]?.color || '#3b82f6',
+      shortDescription: cat.shortDescription || '',
+      serviceCount: countMap[cat.name] || 0,
+      sortOrder: cat.sortOrder,
+    }));
+    await cache.set(cacheKey, formatted, 600);
+    return res.json({ success: true, data: formatted });
+  }
+
+  // Merge default CATEGORY_META keys with DB categories as fallback
   const categoryNames = Array.from(new Set([...Object.keys(CATEGORY_META), ...Object.keys(countMap)]));
   const categories = categoryNames.map(name => ({
     name,
-    slug: encodeURIComponent(name),
+    slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     serviceCount: countMap[name] || 0,
     ...(CATEGORY_META[name] || {
-      img: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=400&q=80',
+      img: '/cat_ac.png',
       icon: '🛠️',
       color: '#3b82f6'
     }),
   }));
 
-  // Sort by display order defined in CATEGORY_META
-  const order = Object.keys(CATEGORY_META);
-  categories.sort((a, b) => {
-    const ia = order.indexOf(a.name);
-    const ib = order.indexOf(b.name);
-    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
-  });
-
   await cache.set(cacheKey, categories, 600);
   res.json({ success: true, data: categories });
+});
+
+/**
+ * GET /services/categories/:idOrSlug/service-types
+ * Returns active service types for a given category ID or Slug
+ */
+router.get('/categories/:idOrSlug/service-types', async (req, res) => {
+  const { idOrSlug } = req.params;
+  const { Category, ServiceType } = require('../../models');
+
+  let category;
+  if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
+    category = await Category.findById(idOrSlug).lean();
+  }
+  if (!category) {
+    category = await Category.findOne({
+      $or: [
+        { slug: idOrSlug.toLowerCase() },
+        { name: { $regex: new RegExp(`^${idOrSlug.replace(/-/g, ' ')}$`, 'i') } }
+      ]
+    }).lean();
+  }
+
+  if (!category) {
+    return res.json({ success: true, data: [] });
+  }
+
+  const serviceTypes = await ServiceType.find({
+    categoryId: category._id,
+    status: 'active',
+    isArchived: false,
+  }).sort({ sortOrder: 1 }).lean();
+
+  res.json({ success: true, category, data: serviceTypes });
+});
+
+/**
+ * GET /services/service-types
+ * Returns all active service types across categories
+ */
+router.get('/service-types', async (req, res) => {
+  const { categoryId, categorySlug } = req.query;
+  const { ServiceType } = require('../../models');
+  const filter = { status: 'active', isArchived: false };
+  if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) filter.categoryId = categoryId;
+  if (categorySlug) filter.categorySlug = categorySlug.toLowerCase();
+
+  const types = await ServiceType.find(filter).populate('categoryId', 'name slug icon').sort({ sortOrder: 1 }).lean();
+  res.json({ success: true, data: types });
 });
 
 /**

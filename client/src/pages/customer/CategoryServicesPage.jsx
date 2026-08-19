@@ -196,6 +196,8 @@ export default function CategoryServicesPage() {
   };
 
   const [services, setServices] = useState([]);
+  const [serviceTypes, setServiceTypes] = useState([]);
+  const [selectedType, setSelectedType] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
@@ -206,9 +208,13 @@ export default function CategoryServicesPage() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    apiService.getServices({ category: decoded, sort })
-      .then(res => {
-        setServices(res.data.data || []);
+    Promise.all([
+      apiService.getServices({ category: decoded, sort }),
+      apiService.getServiceTypesByCategory(decoded).catch(() => ({ data: { data: [] } })),
+    ])
+      .then(([resServices, resTypes]) => {
+        setServices(resServices.data.data || []);
+        setServiceTypes(resTypes.data.data || []);
         setLoading(false);
       })
       .catch(err => {
@@ -224,16 +230,28 @@ export default function CategoryServicesPage() {
     );
   }, [publicSettings, decoded]);
 
-  // Client-side search filter
+  // Client-side search & service type filter
   const filtered = useMemo(() => {
-    if (!search.trim()) return services;
-    const q = search.toLowerCase();
-    return services.filter(s =>
-      s.name.toLowerCase().includes(q) ||
-      s.description?.toLowerCase().includes(q) ||
-      s.tags?.some(t => t.toLowerCase().includes(q))
-    );
-  }, [services, search]);
+    let result = services;
+    if (selectedType) {
+      const typeObj = serviceTypes.find(t => t._id === selectedType);
+      const typeName = typeObj ? typeObj.name.toLowerCase() : '';
+      result = result.filter(s =>
+        (s.serviceTypeId && s.serviceTypeId === selectedType) ||
+        (s.subcategory && s.subcategory.toLowerCase() === typeName) ||
+        (s.name && s.name.toLowerCase().includes(typeName))
+      );
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        s.description?.toLowerCase().includes(q) ||
+        s.tags?.some(t => t.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [services, serviceTypes, selectedType, search]);
 
   const displayHeroImg = customBanner?.heroImage || meta.img;
   const displayTitle = customBanner?.title || decoded;
@@ -317,6 +335,36 @@ export default function CategoryServicesPage() {
             Sort
           </button>
         </div>
+
+        {/* Dynamic Service Types Pills Bar */}
+        {serviceTypes.length > 0 && (
+          <div className="max-w-2xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto no-scrollbar">
+            <button
+              onClick={() => setSelectedType('')}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all ${
+                selectedType === ''
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              All Services
+            </button>
+            {serviceTypes.map(st => (
+              <button
+                key={st._id}
+                onClick={() => setSelectedType(st._id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 flex items-center gap-1 transition-all ${
+                  selectedType === st._id
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <span>{st.icon || '🔧'}</span>
+                <span>{st.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Sort dropdown */}
         {showFilter && (

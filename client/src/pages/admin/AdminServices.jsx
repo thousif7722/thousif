@@ -517,29 +517,49 @@ export default function AdminServices() {
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [catForm, setCatForm] = useState({ name: '', icon: '✨', subcategories: '' });
 
+  const [dbCategoriesList, setDbCategoriesList] = useState([]);
+
   const load = async () => {
     setLoading(true);
     try {
-      const res = await apiService.getServices();
-      const list = res.data.data || [];
-      setServices(list);
+      const [resServices, resCats, resTypes] = await Promise.all([
+        apiService.getServices(),
+        apiService.getAdminCategories(),
+        apiService.getAdminServiceTypes(),
+      ]);
 
-      // Dynamically extract any custom categories present in DB
-      setCategoryMap(prev => {
-        const next = { ...prev };
-        list.forEach(s => {
-          if (s.category && !next[s.category]) {
-            next[s.category] = {
-              icon: s.icon || '🛠️',
-              subcategories: s.subcategory ? [s.subcategory] : ['General Service', 'Repair', 'Installation']
-            };
-          } else if (s.category && s.subcategory && !next[s.category].subcategories.includes(s.subcategory)) {
-            next[s.category].subcategories.push(s.subcategory);
-          }
-        });
-        return next;
+      const list = resServices.data.data || [];
+      const catsList = resCats.data.data || [];
+      const typesList = resTypes.data.data || [];
+
+      setServices(list);
+      setDbCategoriesList(catsList);
+
+      // Build dynamic categoryMap from DB
+      const nextMap = { ...CATEGORY_OPTIONS };
+      catsList.forEach(c => {
+        const subTypes = typesList.filter(t => (t.categoryId?._id || t.categoryId) === c._id).map(t => t.name);
+        nextMap[c.name] = {
+          _id: c._id,
+          icon: c.icon || '🛠️',
+          subcategories: subTypes.length > 0 ? subTypes : (nextMap[c.name]?.subcategories || ['General Service', 'Repair', 'Installation']),
+        };
       });
-    } catch { toast.error('Failed to load services'); }
+
+      // Also merge any legacy categories found in services
+      list.forEach(s => {
+        if (s.category && !nextMap[s.category]) {
+          nextMap[s.category] = {
+            icon: s.icon || '🛠️',
+            subcategories: s.subcategory ? [s.subcategory] : ['General Service', 'Repair', 'Installation']
+          };
+        } else if (s.category && s.subcategory && !nextMap[s.category].subcategories.includes(s.subcategory)) {
+          nextMap[s.category].subcategories.push(s.subcategory);
+        }
+      });
+
+      setCategoryMap(nextMap);
+    } catch { toast.error('Failed to load services & categories'); }
     setLoading(false);
   };
 
@@ -556,7 +576,7 @@ export default function AdminServices() {
     setIsCatModalOpen(true);
   }
 
-  function handleSaveCategory(e) {
+  async function handleSaveCategory(e) {
     e.preventDefault();
     const name = catForm.name.trim();
     if (!name) return toast.error('Category name is required');
@@ -568,25 +588,39 @@ export default function AdminServices() {
 
     const subList = subs.length > 0 ? subs : ['General Service', 'Repair', 'Installation'];
 
-    setCategoryMap(prev => ({
-      ...prev,
-      [name]: {
+    try {
+      // Persist new Category to DB
+      const resCat = await apiService.createCategory({
+        name,
         icon: catForm.icon || '✨',
-        subcategories: subList,
+        shortDescription: `Services for ${name}`,
+      });
+      const newCatObj = resCat.data.data;
+
+      // Create Service Types for this category in DB
+      for (let i = 0; i < subList.length; i++) {
+        await apiService.createServiceType({
+          categoryId: newCatObj._id,
+          name: subList[i],
+          icon: catForm.icon || '✨',
+          sortOrder: i + 1,
+        }).catch(() => {});
       }
-    }));
 
-    toast.success(`Category "${name}" added!`);
-    setIsCatModalOpen(false);
+      toast.success(`Category "${name}" saved to database!`);
+      setIsCatModalOpen(false);
+      await load();
 
-    // If service modal is currently open, auto-select this new category
-    if (isModalOpen) {
-      setForm(f => ({
-        ...f,
-        category: name,
-        subcategory: subList[0] || '',
-        icon: catForm.icon || '✨',
-      }));
+      if (isModalOpen) {
+        setForm(f => ({
+          ...f,
+          category: name,
+          subcategory: subList[0] || '',
+          icon: catForm.icon || '✨',
+        }));
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to save category');
     }
   }
 

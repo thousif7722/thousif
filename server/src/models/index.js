@@ -237,6 +237,39 @@ ProviderSchema.index({ riskScore: -1 });                                   // Fr
 ProviderSchema.index({ city: 1, approvalStatus: 1, isOnline: 1 });        // City-based admin view
 
 // ══════════════════════════════════════════════════════════════════════════════
+// CATEGORY & SERVICE TYPE HIERARCHY MODELS
+// ══════════════════════════════════════════════════════════════════════════════
+const CategorySchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true, trim: true },
+  slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  icon: { type: String, default: '🛠️' },
+  image: { type: String, default: '' },
+  color: { type: String, default: '#3b82f6' },
+  shortDescription: { type: String, trim: true, default: '' },
+  status: { type: String, enum: ['active', 'inactive', 'archived'], default: 'active', index: true },
+  sortOrder: { type: Number, default: 0 },
+  isArchived: { type: Boolean, default: false, index: true },
+}, { timestamps: true });
+
+CategorySchema.index({ status: 1, sortOrder: 1 });
+
+const ServiceTypeSchema = new mongoose.Schema({
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true, index: true },
+  categorySlug: { type: String, required: true, index: true },
+  name: { type: String, required: true, trim: true },
+  slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  description: { type: String, trim: true, default: '' },
+  icon: { type: String, default: '🔧' },
+  image: { type: String, default: '' },
+  sortOrder: { type: Number, default: 0 },
+  status: { type: String, enum: ['active', 'inactive', 'archived'], default: 'active', index: true },
+  isArchived: { type: Boolean, default: false, index: true },
+}, { timestamps: true });
+
+ServiceTypeSchema.index({ categoryId: 1, name: 1 });
+ServiceTypeSchema.index({ categoryId: 1, status: 1, sortOrder: 1 });
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SERVICE CATALOG MODEL
 // ══════════════════════════════════════════════════════════════════════════════
 const ServiceSchema = new mongoose.Schema({
@@ -244,6 +277,8 @@ const ServiceSchema = new mongoose.Schema({
   slug: { type: String, required: true, unique: true, lowercase: true },
   category: { type: String, required: true, index: true },
   subcategory: String,
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', index: true },
+  serviceTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceType', index: true },
   serviceType: { type: String, enum: ['visit_inspection', 'fixed_repair'], default: 'fixed_repair' },
   categoryOptions: [{
     optionName: { type: String, required: true },
@@ -1460,6 +1495,8 @@ OperationsAlertSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL
 module.exports = {
   User: mongoose.model('User', UserSchema),
   Provider: mongoose.model('Provider', ProviderSchema),
+  Category: mongoose.model('Category', CategorySchema),
+  ServiceType: mongoose.model('ServiceType', ServiceTypeSchema),
   Service: mongoose.model('Service', ServiceSchema),
   Booking: mongoose.model('Booking', BookingSchema),
   MaterialsUsed: mongoose.model('MaterialsUsed', MaterialsUsedSchema),

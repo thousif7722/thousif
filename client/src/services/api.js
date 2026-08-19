@@ -126,11 +126,21 @@ export const apiService = {
   activatePlus: (data) => api.post('/auth/plus', data),
   updateProfile: (data) => api.put('/auth/profile', data),
 
-  // Services
+  // Services & Categories
   getServices: (params) => api.get('/services', { params }),
   getServiceById: (id) => api.get(`/services/${id}`),
   getServiceBySlug: (slug) => api.get(`/services/slug/${slug}`),
   getCategories: () => api.get('/services/categories'),
+  getServiceTypesByCategory: (idOrSlug) => api.get(`/services/categories/${idOrSlug}/service-types`),
+  getServiceTypes: (params) => api.get('/services/service-types', { params }),
+  getAdminCategories: (params) => api.get('/admin/categories', { params }),
+  createCategory: (data) => api.post('/admin/categories', data),
+  updateCategory: (id, data) => api.put(`/admin/categories/${id}`, data),
+  deleteCategory: (id) => api.delete(`/admin/categories/${id}`),
+  getAdminServiceTypes: (params) => api.get('/admin/service-types', { params }),
+  createServiceType: (data) => api.post('/admin/service-types', data),
+  updateServiceType: (id, data) => api.put(`/admin/service-types/${id}`, data),
+  deleteServiceType: (id) => api.delete(`/admin/service-types/${id}`),
 
   // Bookings
   getMyBookings: (params) => api.get('/bookings', { params }),

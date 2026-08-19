@@ -234,6 +234,8 @@ async function bootstrap() {
   try {
     await connectDB();
     logger.info('✅ MongoDB connected');
+    const { seedCategoriesAndTypes } = require('./utils/seedCategories');
+    seedCategoriesAndTypes().catch((err) => logger.error('Error seeding categories:', err.message));
   } catch (err) {
     logger.warn('⚠️  MongoDB unavailable — some features will not work:', err.message);
   }

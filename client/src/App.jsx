@@ -38,6 +38,7 @@ const AdminProviders   = lazy(() => import('@/pages/admin/AdminProviders'));
 const AdminBookings    = lazy(() => import('@/pages/admin/AdminBookings'));
 const AdminFinancials  = lazy(() => import('@/pages/admin/AdminFinancials'));
 const AdminServices    = lazy(() => import('@/pages/admin/AdminServices'));
+const AdminServiceTypes = lazy(() => import('@/pages/admin/AdminServiceTypes'));
 const AdminTeam        = lazy(() => import('@/pages/admin/AdminTeam'));
 const AdminComplaints  = lazy(() => import('@/pages/admin/AdminComplaints'));
 const AdminAnnouncements = lazy(() => import('@/pages/admin/AdminAnnouncements'));
@@ -192,6 +193,8 @@ export default function App() {
         <Route path="/admin/bookings" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_bookings"><AdminBookings /></ProtectedRoute>} />
         <Route path="/admin/financials" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_financials"><AdminFinancials /></ProtectedRoute>} />
         <Route path="/admin/services" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_services"><AdminServices /></ProtectedRoute>} />
+        <Route path="/admin/service-types" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_services"><AdminServiceTypes /></ProtectedRoute>} />
+        <Route path="/admin/settings/service-types" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_services"><AdminServiceTypes /></ProtectedRoute>} />
         <Route path="/admin/complaints" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_complaints"><AdminComplaints /></ProtectedRoute>} />
         <Route path="/admin/team" element={<ProtectedRoute allowedRoles={['admin']}><AdminTeam /></ProtectedRoute>} />
         <Route path="/admin/announcements" element={<ProtectedRoute allowedRoles={['admin', 'staff']} requiredPermission="manage_announcements"><AdminAnnouncements /></ProtectedRoute>} />

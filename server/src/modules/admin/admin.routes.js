@@ -5,7 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const {
   User, Provider, Booking, Transaction,
-  Review, Complaint, Service, WalletLedger, SystemSettings, Notification,
+  Review, Complaint, Service, Category, ServiceType, WalletLedger, SystemSettings, Notification,
   InvoiceSettings, Invoice, AuditLog
 } = require('../../models');
 const { authenticate, authorize, requirePermission } = require('../auth/auth.routes');
@@ -1680,6 +1680,304 @@ router.put('/providers/:id/dues/clear', requirePermission('manage_financials'), 
       isOnHold: provider.earnings.isOnHold,
     },
   });
+});
+
+// ── Category & Service Type Hierarchy Management (Admin CRUD) ───────────────
+
+/**
+ * GET /admin/categories
+ * Returns categories list with count of service types and active services
+ */
+router.get('/categories', requirePermission('manage_services'), async (req, res) => {
+  const { status, search, includeArchived } = req.query;
+  const filter = {};
+  if (status) filter.status = status;
+  if (!includeArchived || includeArchived === 'false') filter.isArchived = false;
+  if (search) {
+    filter.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { shortDescription: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const categories = await Category.find(filter).sort({ sortOrder: 1, name: 1 }).lean();
+
+  const typeCounts = await ServiceType.aggregate([
+    { $match: { isArchived: false } },
+    { $group: { _id: '$categoryId', count: { $sum: 1 } } }
+  ]);
+  const typeCountMap = Object.fromEntries(typeCounts.map(tc => [tc._id.toString(), tc.count]));
+
+  const serviceCounts = await Service.aggregate([
+    { $group: { _id: '$category', count: { $sum: 1 } } }
+  ]);
+  const serviceCountMap = Object.fromEntries(serviceCounts.map(sc => [sc._id, sc.count]));
+
+  const enriched = categories.map(cat => ({
+    ...cat,
+    serviceTypeCount: typeCountMap[cat._id.toString()] || 0,
+    serviceCount: serviceCountMap[cat.name] || 0,
+  }));
+
+  res.json({ success: true, count: enriched.length, data: enriched });
+});
+
+/**
+ * POST /admin/categories
+ * Create new category with unique validation
+ */
+router.post('/categories', requirePermission('manage_services'), async (req, res) => {
+  const { name, icon, image, color, shortDescription, sortOrder, status } = req.body;
+  if (!name || !name.trim()) throw new AppError('Category name is required', 400);
+
+  const cleanName = name.trim();
+  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  const existingName = await Category.findOne({ name: { $regex: new RegExp(`^${cleanName}$`, 'i') } });
+  if (existingName) throw new AppError(`Category "${cleanName}" already exists`, 400);
+
+  const existingSlug = await Category.findOne({ slug });
+  if (existingSlug) throw new AppError(`Category slug "${slug}" already exists`, 400);
+
+  const category = await Category.create({
+    name: cleanName,
+    slug,
+    icon: icon || '🛠️',
+    image: image || '',
+    color: color || '#3b82f6',
+    shortDescription: shortDescription?.trim() || '',
+    sortOrder: Number(sortOrder) || 0,
+    status: status || 'active',
+  });
+
+  await cache.delPattern('service:categories:*');
+  logger.info(`Admin ${req.userId} created Category "${category.name}" (${category._id})`);
+  res.status(201).json({ success: true, message: 'Category created successfully', data: category });
+});
+
+/**
+ * PUT /admin/categories/:id
+ * Update category details, status, or reorder
+ */
+router.put('/categories/:id', requirePermission('manage_services'), async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError('Invalid Category ID', 400);
+
+  const { name, icon, image, color, shortDescription, sortOrder, status, isArchived } = req.body;
+  const category = await Category.findById(id);
+  if (!category) throw new AppError('Category not found', 404);
+
+  if (name && name.trim() !== category.name) {
+    const cleanName = name.trim();
+    const existing = await Category.findOne({
+      _id: { $ne: id },
+      name: { $regex: new RegExp(`^${cleanName}$`, 'i') }
+    });
+    if (existing) throw new AppError(`Category "${cleanName}" already exists`, 400);
+    category.name = cleanName;
+    category.slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  if (icon !== undefined) category.icon = icon;
+  if (image !== undefined) category.image = image;
+  if (color !== undefined) category.color = color;
+  if (shortDescription !== undefined) category.shortDescription = shortDescription;
+  if (sortOrder !== undefined) category.sortOrder = Number(sortOrder);
+  if (status !== undefined) category.status = status;
+  if (isArchived !== undefined) category.isArchived = Boolean(isArchived);
+
+  await category.save();
+  await cache.delPattern('service:categories:*');
+
+  logger.info(`Admin ${req.userId} updated Category "${category.name}" (${category._id})`);
+  res.json({ success: true, message: 'Category updated successfully', data: category });
+});
+
+/**
+ * DELETE /admin/categories/:id
+ * Deletes category only if NOT referenced by active services. Otherwise prompts to archive.
+ */
+router.delete('/categories/:id', requirePermission('manage_services'), async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError('Invalid Category ID', 400);
+
+  const category = await Category.findById(id);
+  if (!category) throw new AppError('Category not found', 404);
+
+  const referencedServicesCount = await Service.countDocuments({
+    $or: [{ categoryId: id }, { category: category.name }]
+  });
+
+  if (referencedServicesCount > 0) {
+    throw new AppError(
+      `Cannot delete category "${category.name}" because it is referenced by ${referencedServicesCount} services. You can archive or deactivate it instead to protect historical bookings.`,
+      400
+    );
+  }
+
+  category.isArchived = true;
+  category.status = 'archived';
+  await category.save();
+  await cache.delPattern('service:categories:*');
+
+  logger.info(`Admin ${req.userId} archived Category "${category.name}" (${category._id})`);
+  res.json({ success: true, message: `Category "${category.name}" archived successfully` });
+});
+
+// ── Service Types Admin CRUD ─────────────────────────────────────────────────
+
+/**
+ * GET /admin/service-types
+ * Returns service types list (supports filter by categoryId and status)
+ */
+router.get('/service-types', requirePermission('manage_services'), async (req, res) => {
+  const { categoryId, status, search, includeArchived } = req.query;
+  const filter = {};
+  if (categoryId && mongoose.Types.ObjectId.isValid(categoryId)) filter.categoryId = categoryId;
+  if (status) filter.status = status;
+  if (!includeArchived || includeArchived === 'false') filter.isArchived = false;
+  if (search) {
+    filter.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const types = await ServiceType.find(filter)
+    .populate('categoryId', 'name slug icon')
+    .sort({ sortOrder: 1, name: 1 })
+    .lean();
+
+  const serviceCounts = await Service.aggregate([
+    { $match: { serviceTypeId: { $ne: null } } },
+    { $group: { _id: '$serviceTypeId', count: { $sum: 1 } } }
+  ]);
+  const serviceCountMap = Object.fromEntries(serviceCounts.map(sc => [sc._id.toString(), sc.count]));
+
+  const enriched = types.map(t => ({
+    ...t,
+    serviceCount: serviceCountMap[t._id.toString()] || 0,
+  }));
+
+  res.json({ success: true, count: enriched.length, data: enriched });
+});
+
+/**
+ * POST /admin/service-types
+ * Create new service type under a Category
+ */
+router.post('/service-types', requirePermission('manage_services'), async (req, res) => {
+  const { categoryId, name, icon, image, description, sortOrder, status } = req.body;
+  if (!categoryId || !mongoose.Types.ObjectId.isValid(categoryId)) {
+    throw new AppError('Valid Category ID is required', 400);
+  }
+  if (!name || !name.trim()) throw new AppError('Service Type name is required', 400);
+
+  const category = await Category.findById(categoryId);
+  if (!category) throw new AppError('Parent Category not found', 404);
+
+  const cleanName = name.trim();
+  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  const existingInCat = await ServiceType.findOne({
+    categoryId,
+    name: { $regex: new RegExp(`^${cleanName}$`, 'i') },
+    isArchived: false,
+  });
+  if (existingInCat) throw new AppError(`Service Type "${cleanName}" already exists in category "${category.name}"`, 400);
+
+  const serviceType = await ServiceType.create({
+    categoryId: category._id,
+    categorySlug: category.slug,
+    name: cleanName,
+    slug,
+    icon: icon || '🔧',
+    image: image || '',
+    description: description?.trim() || '',
+    sortOrder: Number(sortOrder) || 0,
+    status: status || 'active',
+  });
+
+  await cache.delPattern('services:*');
+  logger.info(`Admin ${req.userId} created ServiceType "${serviceType.name}" (${serviceType._id}) under "${category.name}"`);
+  res.status(201).json({ success: true, message: 'Service Type created successfully', data: serviceType });
+});
+
+/**
+ * PUT /admin/service-types/:id
+ * Update Service Type
+ */
+router.put('/service-types/:id', requirePermission('manage_services'), async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError('Invalid Service Type ID', 400);
+
+  const { categoryId, name, icon, image, description, sortOrder, status, isArchived } = req.body;
+  const serviceType = await ServiceType.findById(id);
+  if (!serviceType) throw new AppError('Service Type not found', 404);
+
+  if (categoryId && categoryId !== serviceType.categoryId.toString()) {
+    const parentCategory = await Category.findById(categoryId);
+    if (!parentCategory) throw new AppError('Target Category not found', 404);
+    serviceType.categoryId = parentCategory._id;
+    serviceType.categorySlug = parentCategory.slug;
+  }
+
+  if (name && name.trim() !== serviceType.name) {
+    const cleanName = name.trim();
+    const existing = await ServiceType.findOne({
+      _id: { $ne: id },
+      categoryId: serviceType.categoryId,
+      name: { $regex: new RegExp(`^${cleanName}$`, 'i') },
+      isArchived: false,
+    });
+    if (existing) throw new AppError(`Service Type "${cleanName}" already exists in this category`, 400);
+    serviceType.name = cleanName;
+    serviceType.slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  if (icon !== undefined) serviceType.icon = icon;
+  if (image !== undefined) serviceType.image = image;
+  if (description !== undefined) serviceType.description = description;
+  if (sortOrder !== undefined) serviceType.sortOrder = Number(sortOrder);
+  if (status !== undefined) serviceType.status = status;
+  if (isArchived !== undefined) serviceType.isArchived = Boolean(isArchived);
+
+  await serviceType.save();
+  await cache.delPattern('services:*');
+
+  logger.info(`Admin ${req.userId} updated ServiceType "${serviceType.name}" (${serviceType._id})`);
+  res.json({ success: true, message: 'Service Type updated successfully', data: serviceType });
+});
+
+/**
+ * DELETE /admin/service-types/:id
+ * Delete or archive Service Type after checking references
+ */
+router.delete('/service-types/:id', requirePermission('manage_services'), async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError('Invalid Service Type ID', 400);
+
+  const serviceType = await ServiceType.findById(id);
+  if (!serviceType) throw new AppError('Service Type not found', 404);
+
+  const referencedServicesCount = await Service.countDocuments({
+    $or: [{ serviceTypeId: id }, { subcategory: serviceType.name }]
+  });
+
+  if (referencedServicesCount > 0) {
+    throw new AppError(
+      `Cannot delete service type "${serviceType.name}" because it is currently assigned to ${referencedServicesCount} services. You can archive it instead.`,
+      400
+    );
+  }
+
+  serviceType.isArchived = true;
+  serviceType.status = 'archived';
+  await serviceType.save();
+  await cache.delPattern('services:*');
+
+  logger.info(`Admin ${req.userId} archived ServiceType "${serviceType.name}" (${serviceType._id})`);
+  res.json({ success: true, message: `Service Type "${serviceType.name}" archived successfully` });
 });
 
 // ── Service Catalog Management (Admin CRUD) ──────────────────────────────────

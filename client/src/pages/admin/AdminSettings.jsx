@@ -5,7 +5,7 @@ import {
   Settings, Image, Video, Plus, Trash2, Save, Upload,
   Check, Globe, Phone, Mail, Sparkles, Shield, AlertCircle, Play, Eye,
   DollarSign, MapPin, Clock, Megaphone, Wrench, ShieldAlert,
-  Share2, Smartphone, Users, Search, FileText
+  Share2, Smartphone, Users, Search, FileText, Layers
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useDispatch } from 'react-redux';
@@ -366,6 +366,25 @@ export default function AdminSettings() {
             </div>
             <span className="text-xs font-bold text-teal-400 mt-3 inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
               Open Branding Manager →
+            </span>
+          </a>
+
+          <a
+            href="/admin/settings/service-types"
+            className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-3xl p-5 shadow-sm hover:shadow-md transition-all border border-indigo-800 flex flex-col justify-between group"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold">
+                <Layers size={20} />
+              </div>
+              <span className="text-[10px] font-extrabold bg-indigo-400 text-slate-950 px-2.5 py-0.5 rounded-full uppercase">Hierarchy</span>
+            </div>
+            <div className="mt-4">
+              <h3 className="font-extrabold text-base text-white group-hover:text-indigo-300 transition-colors">Categories & Service Types</h3>
+              <p className="text-xs text-indigo-200 mt-1">Manage main categories (AC, RO, etc.) & 24+ service types</p>
+            </div>
+            <span className="text-xs font-bold text-indigo-300 mt-3 inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+              Manage Hierarchy →
             </span>
           </a>
 
