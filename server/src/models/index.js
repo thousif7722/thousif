@@ -310,6 +310,13 @@ const ServiceSchema = new mongoose.Schema({
   minProviderTier: { type: String, enum: ['any', 'verified_pro', 'platinum'], default: 'any' },
   sortOrder: { type: Number, default: 0 },
   popularityScore: { type: Number, default: 0 },
+  gstPct: { type: Number, default: 18 },
+  isEmergencyAvailable: { type: Boolean, default: false },
+  emergencyCharge: { type: Number, default: 0 },
+  visitCharge: { type: Number, default: 0 },
+  locationAvailability: { type: String, enum: ['all', 'cities', 'areas'], default: 'all' },
+  allowedCities: [String],
+  allowedAreas: [String],
 }, { timestamps: true });
 
 ServiceSchema.pre('save', function (next) {

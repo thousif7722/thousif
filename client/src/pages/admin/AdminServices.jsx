@@ -474,6 +474,8 @@ const EMPTY_FORM = {
   description: '', basePrice: '', duration: 60,
   priceType: 'fixed', icon: '', image: '', imageUrl: '', imageAlt: '', imageSource: 'none', isActive: true,
   tags: '', includes: '', excludes: '',
+  gstPct: 18, isEmergencyAvailable: false, emergencyCharge: 0, visitCharge: 99,
+  locationAvailability: 'all', allowedCities: 'Mumbai, Delhi, Bengaluru, Hyderabad, Chennai, Pune',
   warrantyDays: 30, plusDiscountPct: 10, minProviderTier: 'any',
   popularityScore: 70, sortOrder: 99,
 };
@@ -644,6 +646,12 @@ export default function AdminServices() {
       tags: (svc.tags || []).join(', '),
       includes: (svc.includes || []).join(', '),
       excludes: (svc.excludes || []).join(', '),
+      gstPct: svc.gstPct ?? 18,
+      isEmergencyAvailable: svc.isEmergencyAvailable ?? false,
+      emergencyCharge: svc.emergencyCharge ?? 0,
+      visitCharge: svc.visitCharge ?? 99,
+      locationAvailability: svc.locationAvailability || 'all',
+      allowedCities: Array.isArray(svc.allowedCities) ? svc.allowedCities.join(', ') : (svc.allowedCities || 'Mumbai, Delhi, Bengaluru, Hyderabad, Chennai, Pune'),
       spareParts: initialSpares,
       warrantyDays: svc.warrantyDays ?? 30,
       plusDiscountPct: svc.plusDiscountPct ?? 10,
@@ -688,6 +696,11 @@ export default function AdminServices() {
         ...form,
         basePrice: parseInt(form.basePrice) || 0,
         duration: parseInt(form.duration) || 60,
+        gstPct: parseInt(form.gstPct) ?? 18,
+        emergencyCharge: parseInt(form.emergencyCharge) || 0,
+        visitCharge: parseInt(form.visitCharge) || 0,
+        isEmergencyAvailable: Boolean(form.isEmergencyAvailable),
+        allowedCities: form.allowedCities ? form.allowedCities.split(',').map(c => c.trim()).filter(Boolean) : [],
         warrantyDays: parseInt(form.warrantyDays) || 30,
         plusDiscountPct: parseInt(form.plusDiscountPct) || 0,
         minProviderTier: form.minProviderTier || 'any',
@@ -1006,7 +1019,27 @@ export default function AdminServices() {
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3 pt-1 border-t border-emerald-100">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">GST Rate (%)</label>
+                    <input type="number" min="0" max="28" value={form.gstPct} onChange={e => set('gstPct', e.target.value)} className="input-field text-sm font-mono" placeholder="18" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Inspection Visit Fee (₹)</label>
+                    <input type="number" min="0" value={form.visitCharge} onChange={e => set('visitCharge', e.target.value)} className="input-field text-sm font-mono" placeholder="99" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Emergency Fee (₹)</label>
+                    <input type="number" min="0" value={form.emergencyCharge} onChange={e => set('emergencyCharge', e.target.value)} className="input-field text-sm font-mono text-amber-700" placeholder="299" disabled={!form.isEmergencyAvailable} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 pt-1">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={form.isEmergencyAvailable} onChange={e => set('isEmergencyAvailable', e.target.checked)} className="rounded text-amber-500 w-4 h-4" />
+                    ⚡ Enable 24/7 60-Min Emergency Dispatch
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-3 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Sort Order</label>
                     <input type="number" min="1" value={form.sortOrder} onChange={e => set('sortOrder', e.target.value)} className="input-field text-sm font-mono" />
@@ -1015,6 +1048,10 @@ export default function AdminServices() {
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Popularity Score (0-100)</label>
                     <input type="number" min="0" max="100" value={form.popularityScore} onChange={e => set('popularityScore', e.target.value)} className="input-field text-sm font-mono" />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Allowed Cities (comma separated)</label>
+                  <input type="text" value={form.allowedCities} onChange={e => set('allowedCities', e.target.value)} className="input-field text-sm" placeholder="Mumbai, Delhi, Bengaluru, Hyderabad, Chennai, Pune" />
                 </div>
               </div>
 

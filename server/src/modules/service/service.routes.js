@@ -53,6 +53,48 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /services/search
+ * Global search across Categories, Service Types, and Bookable Services
+ */
+router.get('/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q || !q.trim()) return res.json({ success: true, categories: [], serviceTypes: [], services: [] });
+
+  const queryStr = q.trim();
+  const regex = new RegExp(queryStr, 'i');
+  const { Category, ServiceType } = require('../../models');
+
+  const [categories, serviceTypes, services] = await Promise.all([
+    Category.find({
+      status: 'active',
+      isArchived: false,
+      $or: [{ name: regex }, { shortDescription: regex }],
+    }).limit(5).lean(),
+
+    ServiceType.find({
+      status: 'active',
+      isArchived: false,
+      $or: [{ name: regex }, { description: regex }],
+    }).populate('categoryId', 'name slug icon').limit(6).lean(),
+
+    Service.find({
+      isActive: true,
+      $or: [{ name: regex }, { category: regex }, { subcategory: regex }, { tags: { $in: [regex] } }],
+    }).limit(10).lean(),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      categories,
+      serviceTypes,
+      services,
+      totalMatches: categories.length + serviceTypes.length + services.length,
+    },
+  });
+});
+
+/**
  * GET /services/categories
  * Returns rich category list from Category model with service counts
  */

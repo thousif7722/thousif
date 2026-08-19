@@ -91,9 +91,14 @@ function ServiceCard({ service, qty, onQtyChange, onBook, accentColor }) {
               <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
                 <ShieldCheck size={10} /> Verified Pro
               </span>
-              {service.popularityScore > 70 && (
-                <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-                  <Star size={10} fill="currentColor" /> Popular
+              {service.isEmergencyAvailable && (
+                <span className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 animate-pulse">
+                  ⚡ 24/7 Emergency (60-Min)
+                </span>
+              )}
+              {service.gstPct && (
+                <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                  + {service.gstPct}% GST
                 </span>
               )}
             </div>
@@ -113,15 +118,17 @@ function ServiceCard({ service, qty, onQtyChange, onBook, accentColor }) {
             )}
 
             {/* Price */}
-            <div className="mt-2">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xs font-semibold text-slate-500">Starting</span>
-                <span className="text-xl font-extrabold text-slate-900">₹{(service.basePrice * qty).toLocaleString('en-IN')}</span>
-                {qty > 1 && (
-                  <span className="text-xs text-slate-400 font-medium">(₹{service.basePrice} × {qty})</span>
-                )}
+            <div className="mt-2 flex items-baseline justify-between">
+              <div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xs font-semibold text-slate-500">Starting</span>
+                  <span className="text-xl font-extrabold text-slate-900">₹{(service.basePrice * qty).toLocaleString('en-IN')}</span>
+                  {qty > 1 && (
+                    <span className="text-xs text-slate-400 font-medium">(₹{service.basePrice} × {qty})</span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-0.5">Inspection visit: ₹{service.visitCharge || 99} (adjusted in bill)</p>
               </div>
-              <p className="text-[10px] text-slate-400 mt-0.5">Price may vary based on condition</p>
             </div>
           </div>
         </div>
