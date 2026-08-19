@@ -231,7 +231,8 @@ async function seedCategoriesAndTypes() {
 
     for (let i = 0; i < catData.serviceTypes.length; i++) {
       const stName = catData.serviceTypes[i];
-      const stSlug = stName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const stBaseSlug = stName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|const stBaseSlug = stName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+|-+$/g, ''); const stSlug = `${category.slug}-${stBaseSlug}`;
+      const stSlug = \;
 
       let serviceType = await ServiceType.findOne({
         categoryId: category._id,
